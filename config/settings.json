@@ -1,0 +1,8 @@
+{
+  "timezone": "Asia/Manila",
+  "resetDay": "friday",
+  "resetHour": 11,
+  "weeklyTargetPercent": 100,
+  "simpleDailyIncrement": 14,
+  "bucketWidth": "1d"
+}
