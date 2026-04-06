@@ -1,8 +1,10 @@
 {
   "timezone": "Asia/Manila",
-  "resetDay": "friday",
-  "resetHour": 11,
+  "weeklyResetDay": "friday",
+  "weeklyResetHour": 11,
   "weeklyTargetPercent": 100,
   "simpleDailyIncrement": 14,
-  "bucketWidth": "1d"
+  "fiveHourWindowHours": 5,
+  "weeklyLimitLabel": "Weekly Claude limit",
+  "fiveHourLimitLabel": "5-hour Claude limit"
 }

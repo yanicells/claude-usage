@@ -14,8 +14,8 @@ const uiMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Anthropic Usage Tracker",
-  description: "Internal dashboard for Anthropic Admin API usage and pacing insights.",
+  title: "Claude Usage Companion",
+  description: "A personal dashboard for tracking your Claude 5-hour and weekly usage pace.",
 };
 
 export default function RootLayout({

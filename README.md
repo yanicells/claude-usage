@@ -1,18 +1,28 @@
-# Anthropic Usage Tracker Dashboard
+# Claude Usage Companion
 
-Production-quality internal dashboard built with Next.js App Router, TypeScript, and Tailwind CSS.
+Personal-use dashboard for tracking your Claude usage manually.
 
-It fetches real Anthropic organization usage and cost data server-side using the Admin API, then compares current usage against a weekly pacing plan configured by a local JSON settings file.
+This app is intentionally simple and local:
 
-## Install
+- no database
+- no org analytics
+- no admin API reporting
+- no model/workspace/service-tier filters
+- no cost dashboard
 
-```bash
-pnpm install
-```
+Everything is stored in local JSON files and updated with manual snapshots.
+
+## Tech Stack
+
+- Next.js App Router
+- TypeScript
+- Tailwind CSS
+- Luxon for timezone-aware pacing math
 
 ## Run
 
 ```bash
+pnpm install
 pnpm dev
 ```
 
@@ -24,115 +34,98 @@ pnpm build
 pnpm start
 ```
 
-## .env.local Example
+## Local Data Files
 
-```bash
-ANTHROPIC_ADMIN_API_KEY=sk-ant-admin-xxxx
-ANTHROPIC_VERSION=2023-06-01
-ANTHROPIC_BASE_URL=https://api.anthropic.com
-ANTHROPIC_BETA=
-DEFAULT_BUCKET_WIDTH=1d
-DEFAULT_TIMEZONE=Asia/Manila
-DEFAULT_RESET_DAY=friday
-DEFAULT_RESET_HOUR=11
-DEFAULT_WEEKLY_TARGET_PERCENT=100
-DEFAULT_SIMPLE_DAILY_INCREMENT=14
-SETTINGS_FILE_PATH=./config/settings.json
-```
-
-## config/settings.json Example
+### `config/settings.json`
 
 ```json
 {
   "timezone": "Asia/Manila",
-  "resetDay": "friday",
-  "resetHour": 11,
+  "weeklyResetDay": "friday",
+  "weeklyResetHour": 11,
   "weeklyTargetPercent": 100,
   "simpleDailyIncrement": 14,
-  "bucketWidth": "1d"
+  "fiveHourWindowHours": 5,
+  "weeklyLimitLabel": "Weekly Claude limit",
+  "fiveHourLimitLabel": "5-hour Claude limit"
 }
 ```
 
-## Folder Structure
+### `data/usage-state.json`
 
-```txt
-app/
-	api/
-		cost/route.ts
-		settings/route.ts
-		usage/route.ts
-	globals.css
-	layout.tsx
-	loading.tsx
-	page.tsx
-components/
-	charts/
-		cost-line-chart.tsx
-		grouped-usage-chart.tsx
-		pacing-chart.tsx
-		usage-line-chart.tsx
-	dashboard/
-		dashboard-client.tsx
-		filters-toolbar.tsx
-		overview-card.tsx
-	settings/
-		settings-editor.tsx
-config/
-	settings.json
-lib/
-	anthropic-admin.ts
-	cn.ts
-	pacing.ts
-	settings.ts
-	types.ts
+```json
+{
+  "currentFiveHourUsagePercent": 62,
+  "currentWeeklyUsagePercent": 37,
+  "currentFiveHourWindowStartedAt": "2026-04-07T09:00:00+08:00",
+  "currentWeeklyCycleStartedAt": "2026-04-04T11:00:00+08:00",
+  "lastUpdatedAt": "2026-04-07T12:30:00+08:00",
+  "notes": "Used Claude heavily for coding in the morning"
+}
 ```
 
-## How to Obtain Anthropic Admin API Key
+### `data/usage-history.json`
 
-1. Sign in to Anthropic Console with an organization admin/owner account.
-2. Navigate to admin API key management in your organization settings.
-3. Create an Admin API key.
-4. Put it in `.env.local` as `ANTHROPIC_ADMIN_API_KEY`.
+```json
+{
+  "snapshots": [
+    {
+      "timestamp": "2026-04-07T12:30:00+08:00",
+      "fiveHourUsagePercent": 62,
+      "weeklyUsagePercent": 37,
+      "notes": "Used Claude heavily for coding in the morning"
+    }
+  ]
+}
+```
 
-Important: the key is only read on the server in route handlers and server-only helper modules.
+## Core UX
 
-## How the Local Settings File Works
+Home page sections:
 
-1. The app loads fallback defaults from environment variables.
-2. It then reads `SETTINGS_FILE_PATH` (default `./config/settings.json`).
-3. JSON file values override env defaults.
-4. Merged settings are used for pacing math and default UI filters.
-5. The settings editor posts updates to `app/api/settings/route.ts` and writes the JSON file on disk.
-6. No database and no localStorage are used for persistent configuration.
-7. If the JSON file is missing or invalid, the app safely falls back to env defaults.
+1. Hero and one-line purpose
+2. Current status cards
+3. Quick update panel
+4. Weekly pacing view
+5. Guidance panel
+6. Recent snapshots list
 
-## How Ahead/Behind Is Computed
+Quick update accepts:
 
-1. Determine active cycle from `resetDay + resetHour + timezone`.
-2. Build a simple 7-slot cumulative weekly projection using `simpleDailyIncrement`.
-3. For each usage bucket in the cycle, accumulate real Anthropic usage units.
-4. Find current slot in the active cycle.
-5. Expected checkpoint = projected cumulative value for that slot.
-6. Actual checkpoint = cumulative real usage for that slot.
-7. Delta = `actual - expected`.
-8. Status:
-   - `actual > expected` => ahead
-   - `actual < expected` => behind
-   - `actual === expected` => on track
+- 5-hour usage as percent (`62`) or fraction (`3/5`)
+- weekly usage percent
+- optional notes
+- timestamp
+- optional checkbox to start a fresh 5-hour window from the timestamp
 
-The UI explicitly notes the integer pacing behavior where `14 * 7 = 98`, so a 100 target can intentionally end at 98 in simple mode.
+## Pacing Logic
 
-## What to Customize
+The weekly pace uses a simple integer cumulative projection:
 
-1. `config/settings.json`: reset day/hour, timezone, target, increment, default bucket width.
-2. Dashboard visuals and card/charts layout in `components/dashboard/dashboard-client.tsx`.
-3. Anthropic endpoint behavior and retries in `lib/anthropic-admin.ts`.
-4. Pacing logic in `lib/pacing.ts`.
-5. Server validation behavior in `app/api/settings/route.ts`.
+- week anchor from `weeklyResetDay + weeklyResetHour + timezone`
+- `expected(slot) = min((slot + 1) * simpleDailyIncrement, weeklyTargetPercent)`
+- status comparison at current slot:
+  - `actual > expected` => ahead
+  - `actual < expected` => behind
+  - `actual === expected` => on track
+
+Example with reset Friday 11:00 and increment 14:
+
+- Fri 14
+- Sat 28
+- Sun 42
+- Mon 56
+- Tue 70
+- Wed 84
+- Thu 98
+
+## API Endpoints (Local JSON Backed)
+
+- `GET /api/companion` -> load dashboard state and computed guidance
+- `POST /api/companion/snapshot` -> save a new manual snapshot to state + history
 
 ## Notes
 
-- All Anthropic API calls are server-side only.
-- `x-api-key` and `anthropic-version` headers are applied in `lib/anthropic-admin.ts`.
-- Pagination (`has_more`, `next_page`) is handled automatically.
-- Route responses include cache headers and helper-level retry/cache behavior.
+- Files are written atomically with temp-file rename.
+- Missing JSON files are auto-created with defaults.
+- The app is fully usable without any official Claude personal usage API.

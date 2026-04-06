@@ -1,0 +1,10 @@
+{
+  "snapshots": [
+    {
+      "timestamp": "2026-04-07T12:30:00+08:00",
+      "fiveHourUsagePercent": 62,
+      "weeklyUsagePercent": 37,
+      "notes": "Used Claude heavily for coding in the morning"
+    }
+  ]
+}
