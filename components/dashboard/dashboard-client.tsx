@@ -80,41 +80,6 @@ function buildGuidance(params: {
   return notes.join(" ");
 }
 
-interface BootstrapState {
-  companionState: CompanionState | null;
-  inputText: string;
-  manualWeeklyInput: string;
-  statusNotice: string;
-}
-
-function loadBootstrapState(): BootstrapState {
-  const fallback: BootstrapState = {
-    companionState: null,
-    inputText: "",
-    manualWeeklyInput: "",
-    statusNotice: "Paste your Plan usage limits block to start parsing.",
-  };
-
-  if (typeof window === "undefined") {
-    return fallback;
-  }
-
-  const parsed = parseStoredCompanionState(window.localStorage.getItem(LOCAL_STORAGE_KEY));
-  if (!parsed) {
-    return fallback;
-  }
-
-  return {
-    companionState: parsed,
-    inputText: parsed.rawText,
-    manualWeeklyInput:
-      parsed.weeklyManuallyEdited && parsed.manualWeeklyUsedPercent !== null
-        ? String(parsed.manualWeeklyUsedPercent)
-        : "",
-    statusNotice: "Restored latest parsed state from localStorage.",
-  };
-}
-
 function Card({
   label,
   value,
@@ -203,23 +168,50 @@ function PacingMiniChart({
 }
 
 export function DashboardClient() {
-  const [bootstrapState] = useState<BootstrapState>(() => loadBootstrapState());
-  const [inputText, setInputText] = useState(bootstrapState.inputText);
-  const [companionState, setCompanionState] = useState<CompanionState | null>(
-    bootstrapState.companionState,
-  );
+  const [inputText, setInputText] = useState("");
+  const [companionState, setCompanionState] = useState<CompanionState | null>(null);
   const [parseStatus, setParseStatus] = useState<ParsedStatus | null>(null);
-  const [statusNotice, setStatusNotice] = useState<string>(bootstrapState.statusNotice);
+  const [statusNotice, setStatusNotice] = useState<string>(
+    "Paste your Plan usage limits block to start parsing.",
+  );
   const [manualEditorOpen, setManualEditorOpen] = useState(false);
-  const [manualWeeklyInput, setManualWeeklyInput] = useState(bootstrapState.manualWeeklyInput);
-  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [manualWeeklyInput, setManualWeeklyInput] = useState("");
+  const [nowMs, setNowMs] = useState<number | null>(null);
 
   useEffect(() => {
+    const parsed = parseStoredCompanionState(window.localStorage.getItem(LOCAL_STORAGE_KEY));
+    if (!parsed) {
+      return;
+    }
+
+    const manualValue =
+      parsed.weeklyManuallyEdited && parsed.manualWeeklyUsedPercent !== null
+        ? String(parsed.manualWeeklyUsedPercent)
+        : "";
+
+    const timeoutId = window.setTimeout(() => {
+      setCompanionState(parsed);
+      setInputText(parsed.rawText);
+      setManualWeeklyInput(manualValue);
+      setStatusNotice("Restored latest parsed state from localStorage.");
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, []);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setNowMs(Date.now());
+    }, 0);
+
     const intervalId = window.setInterval(() => {
       setNowMs(Date.now());
     }, 1000);
 
     return () => {
+      window.clearTimeout(timeoutId);
       window.clearInterval(intervalId);
     };
   }, []);
@@ -324,10 +316,19 @@ export function DashboardClient() {
     setStatusNotice("Manual weekly override removed. Parsed values are active again.");
   }
 
-  const nowPh = DateTime.fromMillis(nowMs).setZone(PH_TIMEZONE);
-  const fasterStatus = getFasterLimitsStatusPH(nowPh);
-  const nextSwitch = getNextFasterLimitsSwitchPH(nowPh);
-  const countdown = formatCountdown(nextSwitch.toMillis() - nowPh.toMillis());
+  const nowPh = nowMs === null ? null : DateTime.fromMillis(nowMs).setZone(PH_TIMEZONE);
+  const fasterStatus = nowPh
+    ? getFasterLimitsStatusPH(nowPh)
+    : {
+        mode: "normal" as const,
+        isActive: false,
+        windowStartIso: null,
+        windowEndIso: null,
+      };
+  const nextSwitch = nowPh ? getNextFasterLimitsSwitchPH(nowPh) : null;
+  const countdown = nowPh && nextSwitch
+    ? formatCountdown(nextSwitch.toMillis() - nowPh.toMillis())
+    : "—";
 
   const manualOverrideActive = Boolean(companionState?.weeklyManuallyEdited);
   const sessionUnavailable = manualOverrideActive;
@@ -345,11 +346,11 @@ export function DashboardClient() {
     : companionState?.weeklyUsedPercent ?? null;
 
   const weeklyAnchor = companionState?.weeklyResetText
-    ? getCurrentWeeklyAnchorFromResetText(companionState.weeklyResetText, nowPh)
+    ? getCurrentWeeklyAnchorFromResetText(companionState.weeklyResetText, nowPh ?? undefined)
     : null;
 
   const weeklyProjection = weeklyAnchor ? buildWeeklyProjection(weeklyAnchor) : [];
-  const currentCheckpoint = getCurrentExpectedCheckpoint(weeklyProjection, nowPh);
+  const currentCheckpoint = getCurrentExpectedCheckpoint(weeklyProjection, nowPh ?? undefined);
   const weeklyComparison =
     activeWeeklyValue !== null && currentCheckpoint
       ? compareWeeklyPace(activeWeeklyValue, currentCheckpoint.expectedCumulativePercent)
@@ -508,18 +509,22 @@ export function DashboardClient() {
         />
         <Card
           label="Faster limits status"
-          value={fasterStatus.mode}
+          value={nowPh ? fasterStatus.mode : "—"}
           hint="Hardcoded PH rule: Mon-Fri, 8:00 PM to 2:00 AM."
           toneClassName={
-            fasterStatus.mode === "faster"
+            nowPh && fasterStatus.mode === "faster"
               ? "border-rose-300 bg-rose-50"
-              : "border-slate-200"
+              : undefined
           }
         />
         <Card
           label="Countdown to mode switch"
           value={countdown}
-          hint={`Next switch: ${nextSwitch.toFormat("ccc, LLL d, h:mm a")} PH`}
+          hint={
+            nextSwitch
+              ? `Next switch: ${nextSwitch.toFormat("ccc, LLL d, h:mm a")} PH`
+              : "Next switch: loading..."
+          }
         />
       </section>
 
