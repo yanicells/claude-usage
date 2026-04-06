@@ -1,479 +1,603 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { DateTime } from "luxon";
+import { useEffect, useState } from "react";
 
-import type {
-  CompanionDashboardResponse,
-  PaceStatus,
-  UsageSnapshot,
-} from "@/lib/companion-types";
+import {
+  LOCAL_STORAGE_KEY,
+  PH_TIMEZONE,
+  buildWeeklyProjection,
+  compareWeeklyPace,
+  createEmptyCompanionState,
+  formatCountdown,
+  getCurrentExpectedCheckpoint,
+  getCurrentWeeklyAnchorFromResetText,
+  getFasterLimitsStatusPH,
+  getNextFasterLimitsSwitchPH,
+  parseClaudeUsageBlock,
+  parseStoredCompanionState,
+  type CompanionState,
+  type ParsedStatus,
+  type WeeklyProjectionPoint,
+} from "@/lib/local-companion";
 
-function toDatetimeLocal(isoString: string): string {
-  const date = new Date(isoString);
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-
-  const offsetMs = date.getTimezoneOffset() * 60_000;
-  const local = new Date(date.getTime() - offsetMs);
-  return local.toISOString().slice(0, 16);
+function clampPercent(value: number): number {
+  return Math.max(0, Math.min(100, Math.round(value)));
 }
 
-function nowDatetimeLocal(): string {
-  return toDatetimeLocal(new Date().toISOString());
-}
-
-function formatPercent(value: number): string {
-  return `${Math.round(value)}%`;
-}
-
-function formatPaceStatus(status: PaceStatus): string {
-  if (status === "on-track") {
-    return "on track";
-  }
-
-  return status;
-}
-
-function formatTimestamp(iso: string, timezone: string): string {
-  const parsed = new Date(iso);
-  if (Number.isNaN(parsed.getTime())) {
+function formatIsoInPh(iso: string): string {
+  const date = DateTime.fromISO(iso).setZone(PH_TIMEZONE);
+  if (!date.isValid) {
     return "-";
   }
 
-  try {
-    return new Intl.DateTimeFormat("en-US", {
-      timeZone: timezone,
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    }).format(parsed);
-  } catch {
-    return parsed.toLocaleString();
-  }
+  return date.toFormat("ccc, LLL d, h:mm a");
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
-
-function paceToneClasses(status: PaceStatus): string {
+function statusTone(status: "ahead" | "on-track" | "behind"): string {
   if (status === "ahead") {
-    return "bg-amber-100 text-amber-900 border-amber-300";
+    return "border-amber-300 bg-amber-50 text-amber-900";
   }
 
   if (status === "behind") {
-    return "bg-emerald-100 text-emerald-900 border-emerald-300";
+    return "border-emerald-300 bg-emerald-50 text-emerald-900";
   }
 
-  return "bg-sky-100 text-sky-900 border-sky-300";
+  return "border-cyan-300 bg-cyan-50 text-cyan-900";
 }
 
-function SnapshotRow({ snapshot, timezone }: { snapshot: UsageSnapshot; timezone: string }) {
+function buildGuidance(params: {
+  hasWeeklyData: boolean;
+  weeklyComparisonStatus: "ahead" | "on-track" | "behind" | null;
+  sessionUsedPercent: number | null;
+  sessionUnavailable: boolean;
+  fasterMode: "faster" | "normal";
+}): string {
+  const notes: string[] = [];
+
+  if (!params.hasWeeklyData || !params.weeklyComparisonStatus) {
+    notes.push("Paste your latest Plan usage limits block so pace guidance can start.");
+  } else if (params.weeklyComparisonStatus === "ahead") {
+    notes.push("You're ahead of weekly pace. Use Claude more lightly until the next checkpoint.");
+  } else if (params.weeklyComparisonStatus === "behind") {
+    notes.push("You're behind weekly pace, so you still have room today.");
+  } else {
+    notes.push("You're on track with weekly pace. Keep usage steady.");
+  }
+
+  if (params.sessionUnavailable) {
+    notes.push("Manual weekly override is active, so current session values are hidden.");
+  } else if (params.sessionUsedPercent !== null && params.sessionUsedPercent >= 75) {
+    notes.push("Your weekly usage is okay, but your current 5-hour session is getting high.");
+  }
+
+  if (params.fasterMode === "faster") {
+    notes.push("Faster limits are active right now, so your 5-hour session may drain more quickly.");
+  } else {
+    notes.push("Normal limits are active right now.");
+  }
+
+  return notes.join(" ");
+}
+
+interface BootstrapState {
+  companionState: CompanionState | null;
+  inputText: string;
+  manualWeeklyInput: string;
+  statusNotice: string;
+}
+
+function loadBootstrapState(): BootstrapState {
+  const fallback: BootstrapState = {
+    companionState: null,
+    inputText: "",
+    manualWeeklyInput: "",
+    statusNotice: "Paste your Plan usage limits block to start parsing.",
+  };
+
+  if (typeof window === "undefined") {
+    return fallback;
+  }
+
+  const parsed = parseStoredCompanionState(window.localStorage.getItem(LOCAL_STORAGE_KEY));
+  if (!parsed) {
+    return fallback;
+  }
+
+  return {
+    companionState: parsed,
+    inputText: parsed.rawText,
+    manualWeeklyInput:
+      parsed.weeklyManuallyEdited && parsed.manualWeeklyUsedPercent !== null
+        ? String(parsed.manualWeeklyUsedPercent)
+        : "",
+    statusNotice: "Restored latest parsed state from localStorage.",
+  };
+}
+
+function Card({
+  label,
+  value,
+  hint,
+  toneClassName,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+  toneClassName?: string;
+}) {
   return (
-    <li className="rounded-2xl border border-slate-200 bg-white/95 px-4 py-3 shadow-sm">
-      <p className="text-sm font-semibold text-slate-900">{formatTimestamp(snapshot.timestamp, timezone)}</p>
-      <p className="mt-1 text-sm text-slate-700">
-        5-hour: <span className="font-medium">{formatPercent(snapshot.fiveHourUsagePercent)}</span>
-        {" · "}
-        weekly: <span className="font-medium">{formatPercent(snapshot.weeklyUsagePercent)}</span>
-      </p>
-      {snapshot.notes ? <p className="mt-1 text-xs text-slate-600">{snapshot.notes}</p> : null}
-    </li>
+    <article
+      className={`rounded-2xl border bg-white/95 p-4 shadow-sm ${toneClassName ?? "border-slate-200"}`}
+    >
+      <p className="text-xs uppercase tracking-[0.14em] text-slate-500">{label}</p>
+      <p className="mt-2 text-2xl font-semibold text-slate-900">{value}</p>
+      <p className="mt-2 text-xs text-slate-600">{hint}</p>
+    </article>
+  );
+}
+
+function PacingMiniChart({
+  points,
+  currentIndex,
+  actual,
+}: {
+  points: WeeklyProjectionPoint[];
+  currentIndex: number | null;
+  actual: number | null;
+}) {
+  if (points.length === 0) {
+    return (
+      <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-600">
+        Weekly projection needs a valid parsed weekly reset (example: &quot;Resets Thu 2:00 PM&quot;).
+      </div>
+    );
+  }
+
+  const normalizedActual = actual === null ? null : clampPercent(actual);
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-sm">
+      <div className="mb-3 flex flex-wrap items-center gap-4 text-xs text-slate-600">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-full bg-cyan-500" />
+          Expected checkpoint
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-0.5 w-3 bg-rose-500" />
+          Actual now marker
+        </span>
+      </div>
+
+      <div className="grid grid-cols-7 gap-2">
+        {points.map((point) => {
+          const expectedHeight = Math.max(6, point.expectedCumulativePercent);
+          const actualHeight = normalizedActual === null ? null : Math.max(2, normalizedActual);
+          const isCurrent = point.index === currentIndex;
+
+          return (
+            <div key={point.checkpointIso} className="flex flex-col items-center gap-2">
+              <div
+                className={`relative h-28 w-full max-w-11 rounded-xl border bg-slate-50 ${
+                  isCurrent ? "border-cyan-300" : "border-slate-200"
+                }`}
+              >
+                <div
+                  className="absolute inset-x-1 bottom-1 rounded-md bg-cyan-500/85"
+                  style={{ height: `${expectedHeight}%` }}
+                />
+                {isCurrent && actualHeight !== null ? (
+                  <div
+                    className="absolute inset-x-0 border-t-2 border-rose-500"
+                    style={{ bottom: `${actualHeight}%` }}
+                  />
+                ) : null}
+              </div>
+              <span className="text-[11px] font-medium text-slate-600">{point.dayLabel}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
 export function DashboardClient() {
-  const [data, setData] = useState<CompanionDashboardResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [saveMessage, setSaveMessage] = useState<string | null>(null);
-
-  const [fiveHourUsageInput, setFiveHourUsageInput] = useState("");
-  const [weeklyUsageInput, setWeeklyUsageInput] = useState("");
-  const [notesInput, setNotesInput] = useState("");
-  const [timestampInput, setTimestampInput] = useState(nowDatetimeLocal());
-  const [startNewWindow, setStartNewWindow] = useState(false);
-
-  const hydrateFormFromResponse = useCallback((payload: CompanionDashboardResponse) => {
-    setFiveHourUsageInput(String(payload.state.currentFiveHourUsagePercent));
-    setWeeklyUsageInput(String(payload.state.currentWeeklyUsagePercent));
-    setNotesInput(payload.state.notes);
-    setTimestampInput(toDatetimeLocal(payload.state.lastUpdatedAt));
-    setStartNewWindow(false);
-  }, []);
-
-  const fetchDashboard = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const response = await fetch("/api/companion", { cache: "no-store" });
-      const json = (await response.json()) as CompanionDashboardResponse & { error?: string };
-
-      if (!response.ok || json.error) {
-        throw new Error(json.error || "Failed to load companion data");
-      }
-
-      setData(json);
-      hydrateFormFromResponse(json);
-    } catch (caught) {
-      const message = caught instanceof Error ? caught.message : "Unable to load dashboard data";
-      setError(message);
-    } finally {
-      setLoading(false);
-    }
-  }, [hydrateFormFromResponse]);
+  const [bootstrapState] = useState<BootstrapState>(() => loadBootstrapState());
+  const [inputText, setInputText] = useState(bootstrapState.inputText);
+  const [companionState, setCompanionState] = useState<CompanionState | null>(
+    bootstrapState.companionState,
+  );
+  const [parseStatus, setParseStatus] = useState<ParsedStatus | null>(null);
+  const [statusNotice, setStatusNotice] = useState<string>(bootstrapState.statusNotice);
+  const [manualEditorOpen, setManualEditorOpen] = useState(false);
+  const [manualWeeklyInput, setManualWeeklyInput] = useState(bootstrapState.manualWeeklyInput);
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
-    void fetchDashboard();
-  }, [fetchDashboard]);
+    const intervalId = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
 
-  const handleSaveSnapshot = useCallback(async () => {
-    setSaving(true);
-    setError(null);
-    setSaveMessage(null);
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, []);
 
-    try {
-      const parsedTimestamp = timestampInput ? new Date(timestampInput) : null;
-      const timestampIso = parsedTimestamp && !Number.isNaN(parsedTimestamp.getTime())
-        ? parsedTimestamp.toISOString()
-        : new Date().toISOString();
-
-      const response = await fetch("/api/companion/snapshot", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          fiveHourUsageInput,
-          weeklyUsagePercent: weeklyUsageInput,
-          notes: notesInput,
-          timestamp: timestampIso,
-          startNewFiveHourWindow: startNewWindow,
-        }),
-      });
-
-      const json = (await response.json()) as CompanionDashboardResponse & { error?: string };
-
-      if (!response.ok || json.error) {
-        throw new Error(json.error || "Failed to save snapshot");
-      }
-
-      setData(json);
-      hydrateFormFromResponse(json);
-      setSaveMessage("Snapshot saved.");
-    } catch (caught) {
-      const message = caught instanceof Error ? caught.message : "Unable to save snapshot";
-      setError(message);
-    } finally {
-      setSaving(false);
-    }
-  }, [
-    fiveHourUsageInput,
-    hydrateFormFromResponse,
-    notesInput,
-    startNewWindow,
-    timestampInput,
-    weeklyUsageInput,
-  ]);
-
-  const heavyUseAnswer = useMemo(() => {
-    if (!data) {
-      return "Loading your current usage status...";
-    }
-
-    const fiveRemaining = data.computed.fiveHourRemainingPercent;
-    const weeklyRemaining = data.computed.weeklyRemainingPercent;
-    const paceStatus = data.computed.paceStatus;
-
-    if (fiveRemaining >= 45 && weeklyRemaining >= 30 && paceStatus !== "ahead") {
-      return "Yes. You still have comfortable room right now.";
-    }
-
-    if (fiveRemaining <= 15 || weeklyRemaining <= 15) {
-      return "Use Claude more lightly right now and save room for later.";
-    }
-
-    if (paceStatus === "ahead") {
-      return "Use Claude, but keep the pace lighter until tomorrow.";
-    }
-
-    return "You still have room today, but keep an eye on your next reset.";
-  }, [data]);
-
-  if (loading && !data) {
-    return (
-      <main className="mx-auto w-full max-w-6xl px-4 pb-14 pt-7 sm:px-6">
-        <section className="rounded-3xl border border-slate-200 bg-white/95 p-6 text-sm text-slate-700 shadow-sm">
-          Loading your personal Claude companion...
-        </section>
-      </main>
-    );
+  function persistState(next: CompanionState): void {
+    setCompanionState(next);
+    window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(next));
   }
 
+  function parseAndSave(rawText: string): void {
+    const { parsed, status } = parseClaudeUsageBlock(rawText);
+    const nowIso = DateTime.now().setZone(PH_TIMEZONE).toISO() ?? new Date().toISOString();
+
+    const nextState: CompanionState = {
+      rawText,
+      plan: parsed.plan,
+      sessionUsedPercent: parsed.sessionUsedPercent,
+      sessionResetText: parsed.sessionResetText,
+      weeklyUsedPercent: parsed.weeklyUsedPercent,
+      weeklyResetText: parsed.weeklyResetText,
+      parsedAt: nowIso,
+      weeklyManuallyEdited: false,
+      manualWeeklyUsedPercent: null,
+    };
+
+    persistState(nextState);
+    setManualWeeklyInput("");
+    setParseStatus(status);
+    setStatusNotice(status.message);
+  }
+
+  async function handlePasteFromClipboard(): Promise<void> {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text.trim()) {
+        setStatusNotice("Clipboard is empty. Paste the usage block into the textarea instead.");
+        return;
+      }
+
+      setInputText(text);
+      parseAndSave(text);
+    } catch {
+      setStatusNotice("Clipboard access was blocked. Paste text manually in the textarea.");
+    }
+  }
+
+  function handleParseButton(): void {
+    if (!inputText.trim()) {
+      setStatusNotice("Paste your Plan usage limits block before parsing.");
+      return;
+    }
+
+    parseAndSave(inputText);
+  }
+
+  function handleClearAll(): void {
+    setInputText("");
+    setCompanionState(null);
+    setParseStatus(null);
+    setManualEditorOpen(false);
+    setManualWeeklyInput("");
+    setStatusNotice("All local data cleared.");
+    window.localStorage.removeItem(LOCAL_STORAGE_KEY);
+  }
+
+  function handleManualWeeklySave(): void {
+    const parsedValue = Number.parseInt(manualWeeklyInput, 10);
+    if (!Number.isFinite(parsedValue)) {
+      setStatusNotice("Enter a valid weekly percent (0 to 100).");
+      return;
+    }
+
+    const base = companionState ?? createEmptyCompanionState();
+    const nowIso = DateTime.now().setZone(PH_TIMEZONE).toISO() ?? new Date().toISOString();
+
+    const nextState: CompanionState = {
+      ...base,
+      rawText: inputText,
+      parsedAt: nowIso,
+      weeklyManuallyEdited: true,
+      manualWeeklyUsedPercent: clampPercent(parsedValue),
+    };
+
+    persistState(nextState);
+    setStatusNotice("Weekly usage manually overridden. Session values are now hidden.");
+  }
+
+  function clearManualOverride(): void {
+    if (!companionState) {
+      return;
+    }
+
+    const nowIso = DateTime.now().setZone(PH_TIMEZONE).toISO() ?? new Date().toISOString();
+    const nextState: CompanionState = {
+      ...companionState,
+      parsedAt: nowIso,
+      weeklyManuallyEdited: false,
+      manualWeeklyUsedPercent: null,
+    };
+
+    persistState(nextState);
+    setStatusNotice("Manual weekly override removed. Parsed values are active again.");
+  }
+
+  const nowPh = DateTime.fromMillis(nowMs).setZone(PH_TIMEZONE);
+  const fasterStatus = getFasterLimitsStatusPH(nowPh);
+  const nextSwitch = getNextFasterLimitsSwitchPH(nowPh);
+  const countdown = formatCountdown(nextSwitch.toMillis() - nowPh.toMillis());
+
+  const manualOverrideActive = Boolean(companionState?.weeklyManuallyEdited);
+  const sessionUnavailable = manualOverrideActive;
+  const sessionUsedDisplay = sessionUnavailable
+    ? "—"
+    : companionState?.sessionUsedPercent !== null && companionState?.sessionUsedPercent !== undefined
+      ? `${companionState.sessionUsedPercent}%`
+      : "—";
+  const sessionResetDisplay = sessionUnavailable
+    ? "—"
+    : companionState?.sessionResetText ?? "—";
+
+  const activeWeeklyValue = manualOverrideActive
+    ? companionState?.manualWeeklyUsedPercent ?? null
+    : companionState?.weeklyUsedPercent ?? null;
+
+  const weeklyAnchor = companionState?.weeklyResetText
+    ? getCurrentWeeklyAnchorFromResetText(companionState.weeklyResetText, nowPh)
+    : null;
+
+  const weeklyProjection = weeklyAnchor ? buildWeeklyProjection(weeklyAnchor) : [];
+  const currentCheckpoint = getCurrentExpectedCheckpoint(weeklyProjection, nowPh);
+  const weeklyComparison =
+    activeWeeklyValue !== null && currentCheckpoint
+      ? compareWeeklyPace(activeWeeklyValue, currentCheckpoint.expectedCumulativePercent)
+      : null;
+
+  const guidanceText = buildGuidance({
+    hasWeeklyData: activeWeeklyValue !== null && currentCheckpoint !== null,
+    weeklyComparisonStatus: weeklyComparison?.status ?? null,
+    sessionUsedPercent: companionState?.sessionUsedPercent ?? null,
+    sessionUnavailable,
+    fasterMode: fasterStatus.mode,
+  });
+
+  const parsedSessionSummary =
+    companionState?.sessionUsedPercent === null || companionState?.sessionUsedPercent === undefined
+      ? "—"
+      : `${companionState.sessionUsedPercent}%`;
+  const parsedWeeklySummary =
+    companionState?.weeklyUsedPercent === null || companionState?.weeklyUsedPercent === undefined
+      ? "—"
+      : `${companionState.weeklyUsedPercent}%`;
+
   return (
-    <main className="mx-auto w-full max-w-6xl px-4 pb-14 pt-7 sm:px-6">
-      <section className="rounded-3xl border border-cyan-200 bg-gradient-to-br from-cyan-50 via-sky-50 to-emerald-50 p-6 shadow-sm">
-        <h1 className="text-3xl font-bold tracking-tight text-slate-900">Claude Usage Companion</h1>
+    <main className="mx-auto w-full max-w-5xl px-4 pb-16 pt-7 sm:px-6">
+      <section className="rounded-3xl border border-cyan-200 bg-gradient-to-br from-cyan-50 via-white to-teal-50 p-6 shadow-sm">
+        <p className="text-xs uppercase tracking-[0.16em] text-cyan-700">Personal local companion</p>
+        <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">Claude Usage Companion</h1>
         <p className="mt-2 max-w-3xl text-sm text-slate-700">
-          One personal dashboard to quickly see your 5-hour window, weekly pace, and how hard to use Claude today.
+          Paste your Claude &quot;Plan usage limits&quot; block and get immediate weekly pace guidance without mental math.
         </p>
       </section>
 
-      {error ? (
-        <section className="mt-5 rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          {error}
-        </section>
-      ) : null}
+      <section className="mt-6 rounded-3xl border border-slate-200 bg-white/95 p-5 shadow-sm">
+        <h2 className="text-lg font-semibold text-slate-900">Paste and parse</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          Main source of truth is the latest parsed block. Weekly can be manually overridden when needed.
+        </p>
 
-      {saveMessage ? (
-        <section className="mt-5 rounded-2xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-          {saveMessage}
-        </section>
-      ) : null}
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => void handlePasteFromClipboard()}
+            className="rounded-xl bg-cyan-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-cyan-700"
+          >
+            Paste from clipboard
+          </button>
+          <button
+            type="button"
+            onClick={handleParseButton}
+            className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-slate-50"
+          >
+            Parse
+          </button>
+          <button
+            type="button"
+            onClick={() => setManualEditorOpen((value) => !value)}
+            className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-slate-50"
+          >
+            Edit weekly manually
+          </button>
+          <button
+            type="button"
+            onClick={handleClearAll}
+            className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100"
+          >
+            Clear all
+          </button>
+        </div>
 
-      {data ? (
-        <>
-          <section className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <article className="rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-sm">
-              <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{data.settings.fiveHourLimitLabel}</p>
-              <p className="mt-2 text-3xl font-semibold text-slate-900">{formatPercent(data.state.currentFiveHourUsagePercent)}</p>
-              <p className="mt-1 text-sm text-slate-600">You have used this much in your current 5-hour window.</p>
-            </article>
+        <textarea
+          className="mt-4 min-h-40 w-full rounded-2xl border border-slate-300 bg-slate-50 px-3 py-3 font-mono text-sm text-slate-900 outline-none ring-cyan-300 transition focus:ring"
+          placeholder="Paste Plan usage limits text here..."
+          value={inputText}
+          onChange={(event) => setInputText(event.target.value)}
+        />
 
-            <article className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 shadow-sm">
-              <p className="text-xs uppercase tracking-[0.16em] text-emerald-700">5-hour remaining</p>
-              <p className="mt-2 text-3xl font-semibold text-emerald-900">{formatPercent(data.computed.fiveHourRemainingPercent)}</p>
-              <p className="mt-1 text-sm text-emerald-900/80">Room left before the current 5-hour reset.</p>
-            </article>
+        {manualEditorOpen ? (
+          <div className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4">
+            <p className="text-sm font-semibold text-amber-900">Manual weekly override</p>
+            <p className="mt-1 text-xs text-amber-800">
+              Weekly pace will use this value. Session cards will show &quot;—&quot; until you parse again or clear override.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={manualWeeklyInput}
+                onChange={(event) => setManualWeeklyInput(event.target.value)}
+                className="w-28 rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-amber-300 focus:ring"
+                placeholder="0-100"
+              />
+              <button
+                type="button"
+                onClick={handleManualWeeklySave}
+                className="rounded-lg bg-amber-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-amber-600"
+              >
+                Save manual weekly
+              </button>
+              <button
+                type="button"
+                onClick={clearManualOverride}
+                disabled={!manualOverrideActive}
+                className="rounded-lg border border-amber-400 bg-white px-3 py-2 text-sm font-semibold text-amber-800 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Use parsed weekly again
+              </button>
+            </div>
+          </div>
+        ) : null}
 
-            <article className="rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-sm">
-              <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{data.settings.weeklyLimitLabel}</p>
-              <p className="mt-2 text-3xl font-semibold text-slate-900">{formatPercent(data.state.currentWeeklyUsagePercent)}</p>
-              <p className="mt-1 text-sm text-slate-600">Your current weekly usage.</p>
-            </article>
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+          <p className="font-medium text-slate-900">Parsed summary preview</p>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            <p>Plan: {companionState?.plan ?? "—"}</p>
+            <p>Session used: {parsedSessionSummary}</p>
+            <p>Session reset: {companionState?.sessionResetText ?? "—"}</p>
+            <p>Weekly used (parsed): {parsedWeeklySummary}</p>
+            <p>Weekly reset: {companionState?.weeklyResetText ?? "—"}</p>
+            <p>Parsed at: {companionState?.parsedAt ? formatIsoInPh(companionState.parsedAt) : "—"}</p>
+          </div>
+        </div>
+      </section>
 
-            <article className="rounded-2xl border border-sky-200 bg-sky-50/70 p-4 shadow-sm">
-              <p className="text-xs uppercase tracking-[0.16em] text-sky-800">Weekly remaining</p>
-              <p className="mt-2 text-3xl font-semibold text-sky-900">{formatPercent(data.computed.weeklyRemainingPercent)}</p>
-              <p className="mt-1 text-sm text-sky-900/80">Percent left for the rest of this cycle.</p>
-            </article>
+      <section className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Card
+          label="Current session used"
+          value={sessionUsedDisplay}
+          hint={sessionUnavailable ? "Unavailable during manual weekly override." : "Parsed from current session block."}
+        />
+        <Card
+          label="Current session resets in"
+          value={sessionResetDisplay}
+          hint={sessionUnavailable ? "Unavailable during manual weekly override." : "Shown exactly as parsed."}
+        />
+        <Card
+          label="Weekly used"
+          value={activeWeeklyValue !== null ? `${activeWeeklyValue}%` : "—"}
+          hint={manualOverrideActive ? "Manual override active." : "Parsed from weekly section."}
+          toneClassName={manualOverrideActive ? "border-amber-300 bg-amber-50" : undefined}
+        />
+        <Card
+          label="Weekly reset"
+          value={companionState?.weeklyResetText ?? "—"}
+          hint="Anchor for 7-step weekly checkpoints."
+        />
+        <Card
+          label="Weekly pace status"
+          value={weeklyComparison ? weeklyComparison.status.replace("-", " ") : "—"}
+          hint={
+            weeklyComparison
+              ? `Expected now ${weeklyComparison.expected}%, actual ${weeklyComparison.actual}%, delta ${weeklyComparison.delta > 0 ? "+" : ""}${weeklyComparison.delta}%.`
+              : "Needs weekly value and valid weekly reset text."
+          }
+          toneClassName={weeklyComparison ? statusTone(weeklyComparison.status) : undefined}
+        />
+        <Card
+          label="Faster limits status"
+          value={fasterStatus.mode}
+          hint="Hardcoded PH rule: Mon-Fri, 8:00 PM to 2:00 AM."
+          toneClassName={
+            fasterStatus.mode === "faster"
+              ? "border-rose-300 bg-rose-50"
+              : "border-slate-200"
+          }
+        />
+        <Card
+          label="Countdown to mode switch"
+          value={countdown}
+          hint={`Next switch: ${nextSwitch.toFormat("ccc, LLL d, h:mm a")} PH`}
+        />
+      </section>
 
-            <article className="rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-sm sm:col-span-2 xl:col-span-1">
-              <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Weekly pace status</p>
-              <p className="mt-2 text-2xl font-semibold text-slate-900">{formatPaceStatus(data.computed.paceStatus)}</p>
-              <p className="mt-1 text-sm text-slate-600">
-                By now, ideal is {formatPercent(data.computed.expectedWeeklyPercentNow)}. Delta is
-                {" "}
-                <span className="font-medium">
-                  {data.computed.deltaWeeklyPercent > 0 ? "+" : ""}
-                  {formatPercent(data.computed.deltaWeeklyPercent)}
-                </span>
-                .
-              </p>
-            </article>
+      <section className="mt-6 rounded-3xl border border-slate-200 bg-white/95 p-5 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold text-slate-900">Weekly pacing</h2>
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700">
+            Simple pacing estimate (14, 28, 42, 56, 70, 84, 98)
+          </span>
+        </div>
 
-            <article className="rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-sm sm:col-span-2 xl:col-span-1">
-              <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Next 5-hour reset</p>
-              <p className="mt-2 text-xl font-semibold text-slate-900">
-                {formatTimestamp(data.computed.nextFiveHourResetAt, data.settings.timezone)}
-              </p>
-              <p className="mt-1 text-sm text-slate-600">Timezone: {data.settings.timezone}</p>
-            </article>
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-7">
+          {weeklyProjection.map((point) => {
+            const active = currentCheckpoint?.index === point.index;
 
-            <article className="rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-sm sm:col-span-2 xl:col-span-2">
-              <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Next weekly reset</p>
-              <p className="mt-2 text-xl font-semibold text-slate-900">
-                {formatTimestamp(data.computed.nextWeeklyResetAt, data.settings.timezone)}
-              </p>
-              <p className="mt-1 text-sm text-slate-600">
-                Reset anchor: {data.settings.weeklyResetDay}, {String(data.settings.weeklyResetHour).padStart(2, "0")}:00.
-              </p>
-            </article>
-          </section>
+            return (
+              <article
+                key={point.checkpointIso}
+                className={`rounded-2xl border px-3 py-3 text-sm ${
+                  active
+                    ? "border-cyan-300 bg-cyan-50"
+                    : "border-slate-200 bg-slate-50"
+                }`}
+              >
+                <p className="font-semibold text-slate-900">{point.dayLabel}</p>
+                <p className="mt-1 text-xs text-slate-600">{point.dateLabel}</p>
+                <p className="text-xs text-slate-600">{point.timeLabel}</p>
+                <p className="mt-2 text-sm font-medium text-slate-800">{point.expectedCumulativePercent}% expected</p>
+              </article>
+            );
+          })}
+        </div>
 
-          <section className="mt-6 grid gap-4 xl:grid-cols-5">
-            <article className="rounded-3xl border border-slate-200 bg-white/95 p-5 shadow-sm xl:col-span-2">
-              <h2 className="text-lg font-semibold text-slate-900">Quick update</h2>
-              <p className="mt-1 text-sm text-slate-600">Save a manual snapshot in a few seconds.</p>
+        <div className="mt-5">
+          <PacingMiniChart
+            points={weeklyProjection}
+            currentIndex={currentCheckpoint?.index ?? null}
+            actual={activeWeeklyValue}
+          />
+        </div>
 
-              <div className="mt-4 space-y-4">
-                <label className="block">
-                  <span className="text-sm font-medium text-slate-800">5-hour usage (% or fraction)</span>
-                  <input
-                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-cyan-300 transition focus:ring"
-                    placeholder="Examples: 62 or 3/5"
-                    value={fiveHourUsageInput}
-                    onChange={(event) => setFiveHourUsageInput(event.target.value)}
-                  />
-                </label>
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+          <p>Expected now: {weeklyComparison ? `${weeklyComparison.expected}%` : "—"}</p>
+          <p>Actual now: {activeWeeklyValue !== null ? `${activeWeeklyValue}%` : "—"}</p>
+          <p>
+            Delta: {weeklyComparison ? `${weeklyComparison.delta > 0 ? "+" : ""}${weeklyComparison.delta}%` : "—"}
+          </p>
+        </div>
+      </section>
 
-                <label className="block">
-                  <span className="text-sm font-medium text-slate-800">Weekly usage percent</span>
-                  <input
-                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-cyan-300 transition focus:ring"
-                    placeholder="Example: 37"
-                    value={weeklyUsageInput}
-                    onChange={(event) => setWeeklyUsageInput(event.target.value)}
-                  />
-                </label>
+      <section className="mt-6 rounded-3xl border border-slate-200 bg-white/95 p-5 shadow-sm">
+        <h2 className="text-lg font-semibold text-slate-900">Guidance</h2>
+        <p className="mt-2 text-sm text-slate-700">{guidanceText}</p>
+      </section>
 
-                <label className="block">
-                  <span className="text-sm font-medium text-slate-800">Timestamp</span>
-                  <input
-                    type="datetime-local"
-                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-cyan-300 transition focus:ring"
-                    value={timestampInput}
-                    onChange={(event) => setTimestampInput(event.target.value)}
-                  />
-                </label>
+      <section className="mt-6 rounded-3xl border border-slate-200 bg-white/95 p-5 shadow-sm">
+        <h2 className="text-lg font-semibold text-slate-900">Parse status</h2>
+        <p className="mt-2 text-sm text-slate-700">{statusNotice}</p>
 
-                <label className="block">
-                  <span className="text-sm font-medium text-slate-800">Notes (optional)</span>
-                  <textarea
-                    className="mt-1 min-h-24 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-cyan-300 transition focus:ring"
-                    placeholder="Example: Used Claude heavily for coding this morning"
-                    value={notesInput}
-                    onChange={(event) => setNotesInput(event.target.value)}
-                  />
-                </label>
+        {parseStatus ? (
+          <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+            <p>
+              Session parse: {parseStatus.sessionParsed ? "success" : parseStatus.sessionPartial ? "partial" : "missing"}
+            </p>
+            <p>
+              Weekly parse: {parseStatus.weeklyParsed ? "success" : parseStatus.weeklyPartial ? "partial" : "missing"}
+            </p>
+          </div>
+        ) : (
+          <p className="mt-3 text-sm text-slate-600">No parse attempt yet in this session.</p>
+        )}
 
-                <label className="flex items-start gap-2 text-sm text-slate-700">
-                  <input
-                    type="checkbox"
-                    className="mt-1 h-4 w-4 rounded border-slate-300 text-cyan-600"
-                    checked={startNewWindow}
-                    onChange={(event) => setStartNewWindow(event.target.checked)}
-                  />
-                  Start a fresh 5-hour window from this timestamp
-                </label>
-
-                <button
-                  type="button"
-                  onClick={() => void handleSaveSnapshot()}
-                  disabled={saving}
-                  className="inline-flex w-full items-center justify-center rounded-xl bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-cyan-700 disabled:cursor-not-allowed disabled:bg-cyan-400"
-                >
-                  {saving ? "Saving..." : "Save snapshot"}
-                </button>
-              </div>
-            </article>
-
-            <article className="rounded-3xl border border-slate-200 bg-white/95 p-5 shadow-sm xl:col-span-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-lg font-semibold text-slate-900">Weekly pacing</h2>
-                <span
-                  className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${paceToneClasses(
-                    data.computed.paceStatus,
-                  )}`}
-                >
-                  {formatPaceStatus(data.computed.paceStatus)}
-                </span>
-              </div>
-              <p className="mt-1 text-sm text-slate-600">
-                By this point in the week, your ideal pace is {formatPercent(data.computed.expectedWeeklyPercentNow)}.
-                Current weekly usage is {formatPercent(data.state.currentWeeklyUsagePercent)}.
-              </p>
-
-              <ul className="mt-4 space-y-2">
-                {data.computed.progression.map((point) => {
-                  const target = Math.max(1, data.settings.weeklyTargetPercent);
-                  const expectedRatio = clamp(
-                    Math.round((point.expectedCumulativePercent / target) * 100),
-                    0,
-                    100,
-                  );
-                  const actualRatio = clamp(
-                    Math.round((data.state.currentWeeklyUsagePercent / target) * 100),
-                    0,
-                    100,
-                  );
-
-                  return (
-                    <li
-                      key={point.slot}
-                      className={`rounded-2xl border px-3 py-2 ${
-                        point.isToday
-                          ? "border-cyan-300 bg-cyan-50/70"
-                          : "border-slate-200 bg-slate-50/80"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-sm font-semibold text-slate-900">
-                          {point.shortLabel}
-                          {point.isToday ? " (today)" : ""}
-                        </p>
-                        <p className="text-sm text-slate-700">Ideal: {formatPercent(point.expectedCumulativePercent)}</p>
-                      </div>
-                      <div className="relative mt-2 h-2 rounded-full bg-slate-200">
-                        <div
-                          className="h-2 rounded-full bg-cyan-500"
-                          style={{ width: `${expectedRatio}%` }}
-                        />
-                        {point.isToday ? (
-                          <span
-                            className="absolute top-1/2 h-3 w-3 -translate-y-1/2 rounded-full border-2 border-cyan-900 bg-emerald-300"
-                            style={{ left: `calc(${actualRatio}% - 6px)` }}
-                          />
-                        ) : null}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-
-              <p className="mt-3 text-sm text-slate-700">
-                {data.computed.deltaWeeklyPercent === 0
-                  ? "You are exactly on today’s checkpoint."
-                  : `Delta vs today’s checkpoint: ${data.computed.deltaWeeklyPercent > 0 ? "+" : ""}${formatPercent(
-                      data.computed.deltaWeeklyPercent,
-                    )}.`}
-              </p>
-            </article>
-          </section>
-
-          <section className="mt-6 grid gap-4 xl:grid-cols-2">
-            <article className="rounded-3xl border border-slate-200 bg-white/95 p-5 shadow-sm">
-              <h2 className="text-lg font-semibold text-slate-900">Guidance</h2>
-              <p className="mt-2 rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium text-slate-800">
-                Can I still use Claude a lot right now? {heavyUseAnswer}
-              </p>
-              <ul className="mt-3 space-y-2 text-sm text-slate-700">
-                {data.computed.guidance.map((line, index) => (
-                  <li key={`${line}-${index}`} className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200">
-                    {line}
-                  </li>
-                ))}
-              </ul>
-            </article>
-
-            <article className="rounded-3xl border border-slate-200 bg-white/95 p-5 shadow-sm">
-              <h2 className="text-lg font-semibold text-slate-900">Recent snapshots</h2>
-              <p className="mt-1 text-sm text-slate-600">Your latest manual updates from local history.</p>
-
-              {data.recentSnapshots.length > 0 ? (
-                <ul className="mt-3 space-y-2">
-                  {data.recentSnapshots.map((snapshot) => (
-                    <SnapshotRow
-                      key={`${snapshot.timestamp}-${snapshot.fiveHourUsagePercent}-${snapshot.weeklyUsagePercent}`}
-                      snapshot={snapshot}
-                      timezone={data.settings.timezone}
-                    />
-                  ))}
-                </ul>
-              ) : (
-                <p className="mt-3 rounded-xl bg-slate-100 px-3 py-2 text-sm text-slate-700">
-                  No snapshots yet. Save your first one from the quick update panel.
-                </p>
-              )}
-            </article>
-          </section>
-        </>
-      ) : null}
+        {manualOverrideActive ? (
+          <span className="mt-4 inline-flex rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">
+            Weekly manual override active
+          </span>
+        ) : null}
+      </section>
     </main>
   );
 }

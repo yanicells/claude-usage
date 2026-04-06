@@ -1,5 +1,108 @@
 # Claude Usage Companion
 
+Single-page personal local browser tool for tracking Claude usage pacing.
+
+No APIs, no env vars, no backend, and no database.
+Everything is stored in localStorage only.
+
+## Stack
+
+- Next.js 16 App Router
+- TypeScript
+- Tailwind CSS
+- Luxon (timezone-safe date math)
+
+## Run
+
+```bash
+pnpm install
+pnpm dev
+```
+
+Quality checks:
+
+```bash
+pnpm lint
+pnpm build
+```
+
+Open http://localhost:3000 and use the single screen.
+
+## Core flow
+
+1. Paste Claude "Plan usage limits" block (clipboard button or textarea).
+2. Parse deterministically.
+3. Save latest parsed state to localStorage.
+4. Show session + weekly + weekly pacing + faster-limits status.
+5. Optionally override weekly usage manually.
+
+If weekly is manually overridden, session values show "—".
+
+## Deterministic parser fields
+
+`parseClaudeUsageBlock()` extracts:
+
+- plan label (e.g. `Pro`) if present
+- session reset text (e.g. `Resets in 4 hr 43 min`)
+- session used percent (e.g. `13% used`)
+- weekly reset text (e.g. `Resets Thu 2:00 PM`)
+- weekly used percent (e.g. `66% used`)
+
+Parser behavior:
+
+- optimized for Claude wording
+- ignores noisy lines (Learn more, Last updated)
+- graceful fallback when one section is missing
+- partial parse status is surfaced in UI
+
+## localStorage schema
+
+Single object under key `claude-usage-companion.latest`:
+
+```json
+{
+  "rawText": "...",
+  "plan": "Pro",
+  "sessionUsedPercent": 13,
+  "sessionResetText": "Resets in 4 hr 43 min",
+  "weeklyUsedPercent": 66,
+  "weeklyResetText": "Resets Thu 2:00 PM",
+  "parsedAt": "2026-04-07T13:30:00+08:00",
+  "weeklyManuallyEdited": false,
+  "manualWeeklyUsedPercent": null
+}
+```
+
+## Weekly pacing logic
+
+- Timezone is fixed to `Asia/Manila`.
+- `weeklyResetText` is treated as PH local text directly.
+- Build 7 checkpoints from parsed reset day/time.
+- Simple expected cumulative sequence:
+  - 14, 28, 42, 56, 70, 84, 98
+- Determine current checkpoint from current PH time.
+- Compare actual weekly value vs expected checkpoint:
+  - ahead: actual > expected
+  - behind: actual < expected
+  - on-track: actual === expected
+
+## Faster-limits logic (hardcoded PH)
+
+- Faster window: Monday-Friday, 8:00 PM to 2:00 AM PH time.
+- Always active independently of parsing.
+- Live status: `faster` or `normal`.
+- Live countdown to next mode switch:
+  - normal -> next faster start
+  - faster -> next normal return
+
+## File map (key files)
+
+- `app/page.tsx` entry route
+- `components/dashboard/dashboard-client.tsx` single-screen UI
+- `lib/local-companion.ts` parser, pacing, faster-limits, countdown, storage model
+
+# Claude Usage Companion
+
 Personal-use dashboard for tracking your Claude usage manually.
 
 This app is intentionally simple and local:
