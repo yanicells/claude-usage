@@ -89,7 +89,7 @@ export function ModePanel({
           className="pointer-events-none absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
           style={{ left: `${timelinePct}%` }}
         >
-          <span className="block h-3.5 w-3.5 rounded-full bg-ctp-blue" />
+          <span className="block h-3.5 w-3.5 rounded-full text-ctp-blue bg-current" />
         </div>
       </div>
 

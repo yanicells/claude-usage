@@ -15,7 +15,6 @@ import {
   buildWeeklyProjection,
   compareWeeklyPace,
   formatCountdown,
-  getCurrentExpectedCheckpoint,
   getCurrentWeeklyAnchorFromResetText,
   getFasterLimitsStatusPH,
   getNextFasterLimitsSwitchPH,
@@ -133,10 +132,6 @@ export function DashboardClient() {
     : null;
 
   const projection = weeklyAnchor ? buildWeeklyProjection(weeklyAnchor) : [];
-  const currentCheckpoint = getCurrentExpectedCheckpoint(
-    projection,
-    nowPh ?? undefined,
-  );
 
   const todayIndex =
     weeklyAnchor && nowPh
@@ -144,7 +139,7 @@ export function DashboardClient() {
           0,
           Math.min(
             6,
-            Math.round(
+            Math.floor(
               nowPh.startOf("day").diff(weeklyAnchor.startOf("day"), "days")
                 .days,
             ),
@@ -152,11 +147,16 @@ export function DashboardClient() {
         )
       : null;
 
+  const dayCheckpoint =
+    todayIndex !== null && todayIndex >= 0 && todayIndex < projection.length
+      ? projection[todayIndex]
+      : null;
+
   const comparison =
-    weeklyUsed !== null && currentCheckpoint
+    weeklyUsed !== null && dayCheckpoint
       ? compareWeeklyPace(
           weeklyUsed,
-          currentCheckpoint.expectedCumulativePercent,
+          dayCheckpoint.expectedCumulativePercent,
         )
       : null;
 
