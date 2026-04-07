@@ -26,13 +26,13 @@ function clamp(n: number): number {
 }
 
 function feedbackLine(delta: number | null): string {
-  if (delta === null) return "paste your usage block to begin tracking";
+  if (delta === null) return "Paste your usage block to begin tracking.";
   const abs = Math.abs(delta);
   const sessions = Math.round((abs / 14) * 2) / 2;
   const label = sessions === 1 ? "session" : "sessions";
-  if (delta < 0) return `under pace by ${abs}% — ~${sessions} ${label} of room left`;
-  if (delta > 0) return `over pace by ${delta}% — ease back (~${sessions} ${label} over)`;
-  return "on pace — keep it steady";
+  if (delta < 0) return `Under pace by ${abs}% — ~${sessions} ${label} of room left.`;
+  if (delta > 0) return `Over pace by ${delta}% — ease back (~${sessions} ${label} over).`;
+  return "On pace — keep it steady.";
 }
 
 // ─── progress bar ────────────────────────────────────────────────────────────
@@ -130,7 +130,7 @@ function ModePanel({
       <p className="text-[9px] uppercase tracking-[0.18em] text-ctp-overlay0">limits</p>
       <div className="flex items-center gap-2">
         <span
-          className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${
+          className={`h-1.5 w-1.5 rounded-full shrink-0 ${
             isFaster ? "bg-ctp-yellow animate-pulse" : "bg-ctp-overlay0"
           }`}
         />
@@ -167,8 +167,8 @@ function PacingChart({
 }) {
   if (points.length === 0) {
     return (
-      <div className="flex-1 min-h-0 flex items-center justify-center rounded-xl border border-dashed border-ctp-surface1">
-        <p className="text-[11px] text-ctp-overlay0">weekly reset text needed to generate chart</p>
+      <div className="flex-1 flex items-center justify-center rounded-xl border border-dashed border-ctp-surface1">
+        <p className="text-xs text-ctp-overlay0">weekly reset text needed to generate chart</p>
       </div>
     );
   }
@@ -182,16 +182,16 @@ function PacingChart({
         : "bg-ctp-blue/50";
 
   return (
-    <div className="flex-1 min-h-0 grid grid-cols-7 gap-2">
+    <div className="flex-1 grid grid-cols-7 gap-2 min-h-0">
       {points.map((point) => {
         const isCurrent = point.index === currentIndex;
         const exp = point.expectedCumulativePercent;
 
         return (
-          <div key={point.checkpointIso} className="flex flex-col min-h-0 gap-1.5">
+          <div key={point.checkpointIso} className="flex flex-col gap-1.5">
             {/* bar track */}
             <div
-              className={`flex-1 relative min-h-0 rounded-lg overflow-hidden ${
+              className={`flex-1 relative rounded-lg overflow-hidden ${
                 isCurrent
                   ? "bg-ctp-surface1 ring-1 ring-ctp-blue ring-inset"
                   : "bg-ctp-surface0 border border-ctp-surface1"
@@ -211,15 +211,15 @@ function PacingChart({
               />
             </div>
             {/* labels below bar */}
-            <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
+            <div className="flex flex-col items-center gap-0.5 shrink-0">
               <span
-                className={`text-[11px] font-semibold ${
+                className={`text-xs font-semibold ${
                   isCurrent ? "text-ctp-blue" : "text-ctp-subtext0"
                 }`}
               >
                 {point.dayLabel}
               </span>
-              <span className="text-[9px] text-ctp-overlay0 tabular-nums">{exp}%</span>
+              <span className="text-[11px] text-ctp-overlay0 tabular-nums">{exp}%</span>
             </div>
           </div>
         );
@@ -338,6 +338,21 @@ export function DashboardClient() {
   const projection = weeklyAnchor ? buildWeeklyProjection(weeklyAnchor) : [];
   const currentCheckpoint = getCurrentExpectedCheckpoint(projection, nowPh ?? undefined);
 
+  // Calendar-day index for the highlight — independent of checkpoint time.
+  // Anchors at midnight so Wed 10AM and Wed 8PM both resolve to the same day column.
+  const todayIndex =
+    weeklyAnchor && nowPh
+      ? Math.max(
+          0,
+          Math.min(
+            6,
+            Math.round(
+              nowPh.startOf("day").diff(weeklyAnchor.startOf("day"), "days").days,
+            ),
+          ),
+        )
+      : null;
+
   const comparison =
     weeklyUsed !== null && currentCheckpoint
       ? compareWeeklyPace(weeklyUsed, currentCheckpoint.expectedCumulativePercent)
@@ -346,74 +361,72 @@ export function DashboardClient() {
   // ─── render ──────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col h-full bg-ctp-base text-ctp-text overflow-hidden">
-      {/* top bar */}
-      <div className="h-11 flex-shrink-0 flex items-center border-b border-ctp-surface1 px-4 gap-3">
-        <span className="text-[10px] tracking-[0.22em] text-ctp-surface1 uppercase select-none font-semibold">
-          claudium
-        </span>
-
-        <button
-          type="button"
-          onClick={() => void handlePaste()}
-          className="flex items-center gap-1.5 text-[11px] text-ctp-subtext0 hover:text-ctp-text transition-colors px-2.5 py-1.5 rounded-lg hover:bg-ctp-surface0 border border-transparent hover:border-ctp-surface1 cursor-pointer"
-        >
-          <ClipboardIcon />
-          paste
-        </button>
-
-        {notice ? (
-          <span className="text-[10px] text-ctp-subtext0 truncate max-w-[240px]">
-            {notice}
+    <div className="min-h-screen bg-ctp-base text-ctp-text py-10 px-6">
+      <div className="max-w-3xl mx-auto flex flex-col gap-5">
+        {/* top bar */}
+        <div className="flex items-center gap-3 pb-3 border-b border-ctp-surface1">
+          <span className="text-[10px] tracking-[0.22em] text-ctp-surface1 uppercase select-none font-semibold">
+            claudium
           </span>
-        ) : null}
 
-        <div className="flex-1" />
+          <button
+            type="button"
+            onClick={() => void handlePaste()}
+            className="flex items-center gap-1.5 text-[11px] text-ctp-subtext0 hover:text-ctp-text transition-colors px-2.5 py-1.5 rounded-lg hover:bg-ctp-surface0 border border-transparent hover:border-ctp-surface1 cursor-pointer"
+          >
+            <ClipboardIcon />
+            paste
+          </button>
 
-        <button
-          type="button"
-          onClick={handleClear}
-          className="text-[10px] text-ctp-overlay0 hover:text-ctp-red transition-colors px-2 py-1 rounded cursor-pointer"
-        >
-          clear
-        </button>
-      </div>
+          {notice ? (
+            <span className="text-[10px] text-ctp-subtext0 truncate max-w-60">
+              {notice}
+            </span>
+          ) : null}
 
-      {/* main grid */}
-      <div className="flex-1 flex min-h-0 overflow-hidden">
-        {/* left column */}
-        <div className="w-[220px] flex-shrink-0 flex flex-col py-4 px-4 gap-3 border-r border-ctp-surface1">
-          <SessionCard
-            used={companionState?.sessionUsedPercent ?? null}
-            resetText={companionState?.sessionResetText ?? null}
-          />
-          <WeeklyCard
-            used={weeklyUsed}
-            resetText={companionState?.weeklyResetText ?? null}
-            status={comparison?.status ?? null}
-          />
           <div className="flex-1" />
-          <ModePanel
-            mode={fasterStatus.mode}
-            countdown={countdown}
-            nextSwitch={nextSwitch}
-          />
+
+          <button
+            type="button"
+            onClick={handleClear}
+            className="text-[10px] text-ctp-overlay0 hover:text-ctp-red transition-colors px-2 py-1 rounded cursor-pointer"
+          >
+            clear
+          </button>
         </div>
 
-        {/* right column */}
-        <div className="flex-1 flex flex-col py-4 px-5 gap-3 min-w-0 overflow-hidden">
-          <p className="flex-shrink-0 text-[9px] uppercase tracking-[0.18em] text-ctp-overlay0">
-            weekly pace
-          </p>
-          <PacingChart
-            points={projection}
-            currentIndex={currentCheckpoint?.index ?? null}
-            actual={weeklyUsed}
-            status={comparison?.status ?? null}
-          />
-          <p className="flex-shrink-0 text-[11px] text-ctp-subtext0 tabular-nums">
-            {feedbackLine(comparison?.delta ?? null)}
-          </p>
+        {/* main content — items-stretch so both cols share the same height */}
+        <div className="flex gap-5 items-stretch">
+          {/* left column */}
+          <div className="w-50 shrink-0 flex flex-col gap-3">
+            <SessionCard
+              used={companionState?.sessionUsedPercent ?? null}
+              resetText={companionState?.sessionResetText ?? null}
+            />
+            <WeeklyCard
+              used={weeklyUsed}
+              resetText={companionState?.weeklyResetText ?? null}
+              status={comparison?.status ?? null}
+            />
+            <ModePanel
+              mode={fasterStatus.mode}
+              countdown={countdown}
+              nextSwitch={nextSwitch}
+            />
+          </div>
+
+          {/* right column — flex-col so chart can flex-1 to fill remaining height */}
+          <div className="flex-1 flex flex-col gap-3 min-w-0">
+            <PacingChart
+              points={projection}
+              currentIndex={todayIndex}
+              actual={weeklyUsed}
+              status={comparison?.status ?? null}
+            />
+            <p className="text-sm text-ctp-subtext0 shrink-0">
+              {feedbackLine(comparison?.delta ?? null)}
+            </p>
+          </div>
         </div>
       </div>
     </div>
