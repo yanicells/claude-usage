@@ -16,8 +16,7 @@ function getTimelinePositionPercent(
 
   const nowMs = nextSwitch.toMillis() - remainingMs;
   const nowPh = DateTime.fromMillis(nowMs).setZone("Asia/Manila");
-  const minutesToday =
-    nowPh.hour * 60 + nowPh.minute + nowPh.second / 60;
+  const minutesToday = nowPh.hour * 60 + nowPh.minute + nowPh.second / 60;
 
   return clampPercent((minutesToday / (24 * 60)) * 100);
 }
@@ -34,19 +33,11 @@ export function ModePanel({
   remainingMs: number | null;
 }) {
   const isFaster = mode === "faster";
-  const FASTER_TOTAL = 6 * 3600 * 1000;
-  const NORMAL_TOTAL = 18 * 3600 * 1000;
-  const totalDuration = isFaster ? FASTER_TOTAL : NORMAL_TOTAL;
-  const elapsed =
-    remainingMs !== null
-      ? Math.max(0, totalDuration - Math.min(remainingMs, totalDuration))
-      : 0;
-  const progressPct = clampPercent((elapsed / totalDuration) * 100);
-  const barColor = isFaster ? "bg-ctp-yellow" : "bg-ctp-green";
   const modeColor = isFaster ? "text-ctp-yellow" : "text-ctp-green";
   const timelinePct = getTimelinePositionPercent(nextSwitch, remainingMs);
   const startPct = clampPercent((SWITCH_END_MINUTE / (24 * 60)) * 100);
   const endPct = clampPercent((SWITCH_START_MINUTE / (24 * 60)) * 100);
+  const normalWidthPct = Math.max(0, endPct - startPct);
 
   return (
     <div className="relative flex flex-col gap-3 rounded-2xl border border-ctp-surface1 bg-ctp-surface0 p-7">
@@ -76,7 +67,7 @@ export function ModePanel({
             <tbody>
               <tr className="text-sm text-ctp-text">
                 <td className="py-2 pr-3">8 PM - 2 AM</td>
-                <td className="py-2 pl-3">2 AM - 8 PM + wknd</td>
+                <td className="py-2 pl-3">2 AM - 8 PM + weekend</td>
               </tr>
             </tbody>
           </table>
@@ -88,36 +79,36 @@ export function ModePanel({
       </p>
 
       <div className="relative mt-1">
-        <div className="relative h-3 overflow-hidden rounded-full bg-ctp-surface1">
+        <div className="relative h-1.5 overflow-hidden rounded-full bg-ctp-surface1">
           <div
-            className="absolute top-0 bottom-0 left-0 bg-ctp-red/35"
-            style={{ width: `${startPct}%` }}
-          />
-          <div
-            className="absolute top-0 bottom-0 bg-ctp-red/35"
-            style={{ left: `${endPct}%`, right: "0" }}
-          />
-          <div
-            className={`absolute top-0 bottom-0 left-0 rounded-full transition-all duration-700 ${barColor}`}
-            style={{ width: `${progressPct}%`, opacity: 0.35 }}
+            className="absolute top-0 bottom-0 bg-ctp-green rounded-full"
+            style={{ left: `${startPct}%`, width: `${normalWidthPct}%` }}
           />
         </div>
         <div
-          className="absolute top-1/2 h-4 w-4 -translate-y-1/2 -translate-x-1/2 rounded-full border-2 border-ctp-peach bg-ctp-base shadow"
+          className="pointer-events-none absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
           style={{ left: `${timelinePct}%` }}
-        />
+        >
+          <span className="block h-3.5 w-3.5 rounded-full bg-ctp-blue" />
+        </div>
       </div>
 
       <div className="relative h-4 text-[0.72rem] text-ctp-subtext0 tabular-nums">
-        <span className="absolute -translate-x-1/2" style={{ left: `${startPct}%` }}>
+        <span
+          className="absolute -translate-x-1/2"
+          style={{ left: `${startPct}%` }}
+        >
           2 am
         </span>
-        <span className="absolute -translate-x-1/2" style={{ left: `${endPct}%` }}>
+        <span
+          className="absolute -translate-x-1/2"
+          style={{ left: `${endPct}%` }}
+        >
           8 pm
         </span>
       </div>
 
-      <p className="text-xl leading-none text-ctp-subtext0 tabular-nums">
+      <p className="text-base leading-none text-ctp-subtext0 tabular-nums">
         {isFaster ? "Normal" : "Nerfed"} in {countdown}
       </p>
     </div>

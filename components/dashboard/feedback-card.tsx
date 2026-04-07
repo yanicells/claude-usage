@@ -10,7 +10,11 @@ export function FeedbackCard({
   let statusWord = "—";
   let statusColor = "text-ctp-overlay0";
   let deltaText = "no data";
-  let roomText = "Paste usage block";
+  let roomSuffix = "awaiting usage";
+  let sessionValueText = "—";
+  let sessionValueColor = "text-ctp-overlay0";
+  let actualColor = "text-ctp-text";
+  let expectedColor = "text-ctp-subtext0";
 
   if (delta !== null) {
     const abs = Math.abs(delta);
@@ -21,46 +25,64 @@ export function FeedbackCard({
     if (delta < 0) {
       statusWord = "Behind";
       statusColor = "text-ctp-green";
-      roomText = `${sessions} sessions room`;
+      actualColor = "text-ctp-green";
+      expectedColor = "text-ctp-blue";
+      sessionValueText = `${sessions}`;
+      sessionValueColor = "text-ctp-green";
+      roomSuffix = sessions === 1 ? "session left" : "sessions left";
     } else if (delta > 0) {
       statusWord = "Ahead";
       statusColor = "text-ctp-red";
-      roomText = `${sessions} sessions to trim`;
+      actualColor = "text-ctp-red";
+      expectedColor = "text-ctp-blue";
+      sessionValueText = `${sessions}`;
+      sessionValueColor = "text-ctp-red";
+      roomSuffix = sessions === 1 ? "session over" : "sessions over";
     } else {
       statusWord = "Even";
       statusColor = "text-ctp-blue";
-      roomText = "No adjustment needed";
+      actualColor = "text-ctp-blue";
+      expectedColor = "text-ctp-blue";
+      sessionValueText = "On target";
+      sessionValueColor = "text-ctp-blue";
+      roomSuffix = "";
     }
   }
 
   return (
-    <div className="shrink-0 rounded-2xl border border-ctp-surface1 bg-ctp-surface0/95 px-4 py-3 sm:px-6 sm:py-4">
-      <div className="grid overflow-hidden rounded-xl border border-ctp-surface1/80 bg-ctp-mantle/35 md:grid-cols-3 md:divide-x md:divide-ctp-surface1/80">
-        <div className="px-4 py-3">
+    <div className="shrink-0 rounded-2xl border border-ctp-surface1 bg-ctp-surface0 px-3 py-2 sm:px-5 sm:py-3">
+      <div className="grid md:grid-cols-3 md:divide-x md:divide-ctp-surface1/80">
+        <div className="px-3 py-2">
           <p className="mb-1 text-[0.68rem] tracking-[0.14em] text-ctp-overlay0 uppercase">
             Pace status
           </p>
-          <p className={`text-xl leading-tight font-bold ${statusColor}`}>
+          <p className={`text-2xl leading-tight font-bold ${statusColor}`}>
             {statusWord} {delta !== null ? `by ${deltaText}` : ""}
           </p>
         </div>
 
-        <div className="border-t border-ctp-surface1/80 px-4 py-3 md:border-t-0">
+        <div className="border-t border-ctp-surface1/80 px-3 py-2 md:border-t-0">
           <p className="mb-1 text-[0.68rem] tracking-[0.14em] text-ctp-overlay0 uppercase">
             Current weekly vs expected
           </p>
-          <p className="text-xl leading-tight font-semibold text-ctp-text tabular-nums">
-            {actual !== null ? `${actual}%` : "—"} /{" "}
-            {expected !== null ? `${expected}%` : "—"}
+          <p className="text-2xl leading-tight font-semibold tabular-nums">
+            <span className={actualColor}>
+              {actual !== null ? `${actual}%` : "—"}
+            </span>
+            <span className="px-1 text-ctp-overlay0">/</span>
+            <span className={expectedColor}>
+              {expected !== null ? `${expected}%` : "—"}
+            </span>
           </p>
         </div>
 
-        <div className="border-t border-ctp-surface1/80 px-4 py-3 md:border-t-0">
+        <div className="border-t border-ctp-surface1/80 px-3 py-2 md:border-t-0">
           <p className="mb-1 text-[0.68rem] tracking-[0.14em] text-ctp-overlay0 uppercase">
             Session feedback
           </p>
-          <p className="text-xl leading-tight font-semibold text-ctp-subtext0">
-            {roomText}
+          <p className="text-2xl leading-tight font-semibold text-ctp-subtext0">
+            <span className={sessionValueColor}>{sessionValueText}</span>
+            {roomSuffix ? <span className="ml-1">{roomSuffix}</span> : null}
           </p>
         </div>
       </div>
