@@ -154,10 +154,7 @@ export function DashboardClient() {
 
   const comparison =
     weeklyUsed !== null && dayCheckpoint
-      ? compareWeeklyPace(
-          weeklyUsed,
-          dayCheckpoint.expectedCumulativePercent,
-        )
+      ? compareWeeklyPace(weeklyUsed, dayCheckpoint.expectedCumulativePercent)
       : null;
 
   return (
