@@ -1,7 +1,26 @@
 import { DateTime } from "luxon";
 
 import { InfoIcon } from "@/components/dashboard/dashboard-icons";
-import { clampPercent, ProgressBar } from "@/components/dashboard/progress-bar";
+import { clampPercent } from "@/components/dashboard/progress-bar";
+
+const SWITCH_START_MINUTE = 20 * 60;
+const SWITCH_END_MINUTE = 2 * 60;
+
+function getTimelinePositionPercent(
+  nextSwitch: DateTime | null,
+  remainingMs: number | null,
+): number {
+  if (!nextSwitch || remainingMs === null) {
+    return 0;
+  }
+
+  const nowMs = nextSwitch.toMillis() - remainingMs;
+  const nowPh = DateTime.fromMillis(nowMs).setZone("Asia/Manila");
+  const minutesToday =
+    nowPh.hour * 60 + nowPh.minute + nowPh.second / 60;
+
+  return clampPercent((minutesToday / (24 * 60)) * 100);
+}
 
 export function ModePanel({
   mode,
@@ -25,6 +44,9 @@ export function ModePanel({
   const progressPct = clampPercent((elapsed / totalDuration) * 100);
   const barColor = isFaster ? "bg-ctp-yellow" : "bg-ctp-green";
   const modeColor = isFaster ? "text-ctp-yellow" : "text-ctp-green";
+  const timelinePct = getTimelinePositionPercent(nextSwitch, remainingMs);
+  const startPct = clampPercent((SWITCH_END_MINUTE / (24 * 60)) * 100);
+  const endPct = clampPercent((SWITCH_START_MINUTE / (24 * 60)) * 100);
 
   return (
     <div className="relative flex flex-col gap-3 rounded-2xl border border-ctp-surface1 bg-ctp-surface0 p-7">
@@ -64,7 +86,37 @@ export function ModePanel({
       <p className={`text-5xl leading-none font-bold ${modeColor}`}>
         {isFaster ? "Nerfed" : "Normal"}
       </p>
-      <ProgressBar pct={progressPct} color={barColor} />
+
+      <div className="relative mt-1">
+        <div className="relative h-3 overflow-hidden rounded-full bg-ctp-surface1">
+          <div
+            className="absolute top-0 bottom-0 left-0 bg-ctp-red/35"
+            style={{ width: `${startPct}%` }}
+          />
+          <div
+            className="absolute top-0 bottom-0 bg-ctp-red/35"
+            style={{ left: `${endPct}%`, right: "0" }}
+          />
+          <div
+            className={`absolute top-0 bottom-0 left-0 rounded-full transition-all duration-700 ${barColor}`}
+            style={{ width: `${progressPct}%`, opacity: 0.35 }}
+          />
+        </div>
+        <div
+          className="absolute top-1/2 h-4 w-4 -translate-y-1/2 -translate-x-1/2 rounded-full border-2 border-ctp-peach bg-ctp-base shadow"
+          style={{ left: `${timelinePct}%` }}
+        />
+      </div>
+
+      <div className="relative h-4 text-[0.72rem] text-ctp-subtext0 tabular-nums">
+        <span className="absolute -translate-x-1/2" style={{ left: `${startPct}%` }}>
+          2 am
+        </span>
+        <span className="absolute -translate-x-1/2" style={{ left: `${endPct}%` }}>
+          8 pm
+        </span>
+      </div>
+
       <p className="text-xl leading-none text-ctp-subtext0 tabular-nums">
         {isFaster ? "Normal" : "Nerfed"} in {countdown}
       </p>

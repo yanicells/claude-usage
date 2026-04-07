@@ -15,7 +15,7 @@ export function PacingChart({
 }) {
   if (points.length === 0) {
     return (
-      <div className="flex min-h-56 items-center justify-center rounded-2xl border border-dashed border-ctp-surface1">
+      <div className="flex-1 flex items-center justify-center rounded-2xl border border-dashed border-ctp-surface1">
         <p className="text-base text-ctp-overlay0">
           paste usage to generate chart
         </p>
@@ -26,8 +26,7 @@ export function PacingChart({
   const normalizedActual = actual !== null ? clampPercent(actual) : null;
 
   return (
-    <div className="rounded-2xl border border-ctp-surface1 bg-ctp-surface0/20 p-4">
-      <div className="grid h-60 grid-cols-7 gap-3 min-h-0">
+    <div className="flex-1 grid grid-cols-7 gap-3 min-h-0">
         {points.map((point) => {
           const isCurrent = point.index === currentIndex;
           const exp = point.expectedCumulativePercent;
@@ -94,7 +93,6 @@ export function PacingChart({
             </div>
           );
         })}
-      </div>
     </div>
   );
 }

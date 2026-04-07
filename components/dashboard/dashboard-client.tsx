@@ -162,7 +162,7 @@ export function DashboardClient() {
 
   return (
     <div className="min-h-screen bg-ctp-base px-4 py-10 text-ctp-text sm:px-8">
-      <div className="mx-auto flex max-w-360 flex-col gap-6">
+      <div className="mx-auto flex max-w-7xl flex-col gap-6">
         <DashboardHeader
           notice={notice}
           onPaste={() => void handlePaste()}
@@ -170,7 +170,7 @@ export function DashboardClient() {
         />
 
         <div className="flex flex-col gap-6 xl:flex-row xl:items-stretch">
-          <div className="w-full shrink-0 flex flex-col gap-4 xl:w-108">
+          <div className="w-full shrink-0 flex flex-col gap-4 xl:w-104">
             <SessionCard
               used={companionState?.sessionUsedPercent ?? null}
               resetText={companionState?.sessionResetText ?? null}
@@ -188,7 +188,7 @@ export function DashboardClient() {
             />
           </div>
 
-          <div className="min-w-0 flex-1 flex flex-col gap-4">
+          <div className="min-w-0 flex-1 flex flex-col gap-4 xl:min-h-0">
             <FeedbackCard
               delta={comparison?.delta ?? null}
               actual={comparison?.actual ?? null}
