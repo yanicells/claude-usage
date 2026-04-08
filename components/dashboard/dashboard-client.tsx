@@ -167,7 +167,7 @@ export function DashboardClient() {
         />
 
         <div className="flex flex-col gap-6 xl:flex-row xl:items-stretch">
-          <div className="w-full shrink-0 flex flex-col gap-4 xl:w-104">
+          <div className="grid w-full shrink-0 grid-cols-2 gap-4 xl:flex xl:w-104 xl:flex-col">
             <SessionCard
               used={companionState?.sessionUsedPercent ?? null}
               resetText={companionState?.sessionResetText ?? null}
@@ -177,12 +177,14 @@ export function DashboardClient() {
               resetText={companionState?.weeklyResetText ?? null}
               status={comparison?.status ?? null}
             />
-            <ModePanel
-              mode={fasterStatus.mode}
-              countdown={countdown}
-              nextSwitch={nextSwitch}
-              remainingMs={remainingMs}
-            />
+            <div className="col-span-2">
+              <ModePanel
+                mode={fasterStatus.mode}
+                countdown={countdown}
+                nextSwitch={nextSwitch}
+                remainingMs={remainingMs}
+              />
+            </div>
           </div>
 
           <div className="min-w-0 flex-1 flex flex-col gap-4 xl:min-h-0">

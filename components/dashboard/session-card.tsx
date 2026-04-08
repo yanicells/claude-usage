@@ -17,7 +17,7 @@ export function SessionCard({
         {used !== null ? `${used}%` : "—"}
       </p>
       <ProgressBar pct={pct} color={barColor} />
-      <p className="truncate text-base leading-none text-ctp-subtext0">
+      <p className="text-base leading-tight text-ctp-subtext0 sm:truncate sm:leading-none">
         {resetText ?? "no data"}
       </p>
     </div>

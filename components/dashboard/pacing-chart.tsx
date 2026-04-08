@@ -26,7 +26,7 @@ export function PacingChart({
   const normalizedActual = actual !== null ? clampPercent(actual) : null;
 
   return (
-    <div className="flex-1 grid grid-cols-7 gap-3 min-h-0">
+    <div className="grid min-h-72 flex-1 grid-cols-7 gap-2 sm:gap-3 xl:min-h-0">
       {points.map((point) => {
         const isCurrent = point.index === currentIndex;
         const exp = point.expectedCumulativePercent;
@@ -51,7 +51,7 @@ export function PacingChart({
         }
 
         return (
-          <div key={point.checkpointIso} className="flex flex-col gap-2">
+          <div key={point.checkpointIso} className="flex min-h-0 flex-col gap-2">
             <div
               className={`relative flex-1 overflow-hidden rounded-xl border border-ctp-surface1 ${
                 isCurrent ? "bg-ctp-surface1" : "bg-ctp-surface0"
