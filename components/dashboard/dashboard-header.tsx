@@ -10,7 +10,7 @@ function formatTimeAgo(isoString: string): { relative: string; absolute: string 
 
   let relative: string;
   if (diffMins < 1) {
-    relative = "just now";
+    relative = "Just now";
   } else if (diffMins < 60) {
     relative = `${diffMins}m ago`;
   } else if (diffHours < 24) {
