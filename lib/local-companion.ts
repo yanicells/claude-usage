@@ -185,7 +185,7 @@ export function parseClaudeUsageBlock(rawText: string): ParsedUsageResult {
     for (let index = weeklyIndex + 1; index < lines.length; index += 1) {
       const line = lines[index] ?? "";
 
-      if (!weeklyResetText && RESET_LINE_REGEX.test(line)) {
+      if (!weeklyResetText && (RESET_LINE_REGEX.test(line) || SESSION_RESET_REGEX.test(line))) {
         weeklyResetText = line;
       }
 
@@ -196,7 +196,7 @@ export function parseClaudeUsageBlock(rawText: string): ParsedUsageResult {
   }
 
   if (!weeklyResetText) {
-    weeklyResetText = lines.find((line) => RESET_LINE_REGEX.test(line)) ?? null;
+    weeklyResetText = lines.find((line) => RESET_LINE_REGEX.test(line) || SESSION_RESET_REGEX.test(line)) ?? null;
   }
 
   if (weeklyUsedPercent === null) {
@@ -244,43 +244,62 @@ export function parseClaudeUsageBlock(rawText: string): ParsedUsageResult {
 }
 
 export function getCurrentWeeklyAnchorFromResetText(resetText: string, nowInput?: DateTime): DateTime | null {
-  const matched = resetText.trim().match(RESET_LINE_REGEX);
-  if (!matched) {
-    return null;
-  }
-
-  const dayToken = (matched[1] ?? "").toLowerCase();
-  const hourToken = Number.parseInt(matched[2] ?? "", 10);
-  const minuteToken = Number.parseInt(matched[3] ?? "", 10);
-  const periodToken = (matched[4] ?? "").toLowerCase();
-
-  if (!Number.isFinite(hourToken) || !Number.isFinite(minuteToken)) {
-    return null;
-  }
-
-  const targetWeekday = RESET_DAY_TO_WEEKDAY[dayToken];
-  if (!targetWeekday) {
-    return null;
-  }
-
-  let hour24 = hourToken % 12;
-  if (periodToken === "pm") {
-    hour24 += 12;
-  }
-
   const now = nowInPh(nowInput);
-  const daysAhead = (targetWeekday - now.weekday + 7) % 7;
 
-  let candidate = now
-    .startOf("day")
-    .plus({ days: daysAhead })
-    .set({ hour: hour24, minute: minuteToken, second: 0, millisecond: 0 });
+  // Try fixed day/time format first (e.g., "Resets Thu 2:00 PM")
+  const fixedMatch = resetText.trim().match(RESET_LINE_REGEX);
+  if (fixedMatch) {
+    const dayToken = (fixedMatch[1] ?? "").toLowerCase();
+    const hourToken = Number.parseInt(fixedMatch[2] ?? "", 10);
+    const minuteToken = Number.parseInt(fixedMatch[3] ?? "", 10);
+    const periodToken = (fixedMatch[4] ?? "").toLowerCase();
 
-  if (candidate > now) {
-    candidate = candidate.minus({ days: 7 });
+    if (!Number.isFinite(hourToken) || !Number.isFinite(minuteToken)) {
+      return null;
+    }
+
+    const targetWeekday = RESET_DAY_TO_WEEKDAY[dayToken];
+    if (!targetWeekday) {
+      return null;
+    }
+
+    let hour24 = hourToken % 12;
+    if (periodToken === "pm") {
+      hour24 += 12;
+    }
+
+    const daysAhead = (targetWeekday - now.weekday + 7) % 7;
+
+    let candidate = now
+      .startOf("day")
+      .plus({ days: daysAhead })
+      .set({ hour: hour24, minute: minuteToken, second: 0, millisecond: 0 });
+
+    if (candidate > now) {
+      candidate = candidate.minus({ days: 7 });
+    }
+
+    return candidate;
   }
 
-  return candidate;
+  // Try duration format (e.g., "Resets in 1 hr 37 min" or "Resets in 22 hr 37 min")
+  const durationMatch = resetText.trim().match(/Resets in (\d+)\s*hr(?:s)?\s*(?:(\d+)\s*min)?/i);
+  if (durationMatch) {
+    const hours = Number.parseInt(durationMatch[1] ?? "0", 10);
+    const minutes = Number.parseInt(durationMatch[2] ?? "0", 10);
+
+    if (!Number.isFinite(hours)) {
+      return null;
+    }
+
+    const totalMs = (hours * 60 + minutes) * 60 * 1000;
+    const nextReset = now.plus({ milliseconds: totalMs });
+
+    // Assume a 7-day cycle: anchor is 7 days before the next reset
+    return nextReset.minus({ days: 7 });
+  }
+
+  return null;
 }
 
 export function buildWeeklyProjection(anchor: DateTime): WeeklyProjectionPoint[] {
