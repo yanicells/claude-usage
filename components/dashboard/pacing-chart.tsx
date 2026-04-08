@@ -51,7 +51,10 @@ export function PacingChart({
         }
 
         return (
-          <div key={point.checkpointIso} className="flex min-h-0 flex-col gap-2">
+          <div
+            key={point.checkpointIso}
+            className="flex min-h-0 flex-col gap-2"
+          >
             <div
               className={`relative flex-1 overflow-hidden rounded-xl border border-ctp-surface1 ${
                 isCurrent ? "bg-ctp-surface1" : "bg-ctp-surface0"

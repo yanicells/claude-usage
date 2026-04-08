@@ -164,6 +164,7 @@ export function DashboardClient() {
           notice={notice}
           onPaste={() => void handlePaste()}
           onClear={handleClear}
+          lastPastedTime={companionState?.parsedAt ?? null}
         />
 
         <div className="flex flex-col gap-6 xl:flex-row xl:items-stretch">
