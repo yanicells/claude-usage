@@ -63,7 +63,7 @@ export function FeedbackCard({
 
         <div className="border-t border-ctp-surface1/80 px-3 py-2 md:border-t-0">
           <p className="mb-1 text-[0.68rem] tracking-[0.14em] text-ctp-overlay0 uppercase">
-            Current weekly vs expected
+            weekly vs expected
           </p>
           <p className="text-2xl leading-tight font-semibold tabular-nums">
             <span className={actualColor}>
