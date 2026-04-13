@@ -109,7 +109,7 @@ export function ModePanel({
       </div>
 
       <p className="text-base leading-none text-ctp-subtext0 tabular-nums">
-        {isFaster ? "Normal" : "Nerfed"} in {countdown}
+        Switches in {countdown}
       </p>
     </div>
   );
