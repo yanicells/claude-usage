@@ -21,6 +21,11 @@ function getTimelinePositionPercent(
   return clampPercent((minutesToday / (24 * 60)) * 100);
 }
 
+function isWeekend(dateTime: DateTime): boolean {
+  // 6 = Saturday, 7 = Sunday in Luxon
+  return dateTime.weekday === 6 || dateTime.weekday === 7;
+}
+
 export function ModePanel({
   mode,
   countdown,
