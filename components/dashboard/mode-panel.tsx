@@ -40,8 +40,15 @@ export function ModePanel({
   const isFaster = mode === "faster";
   const modeColor = isFaster ? "text-ctp-yellow" : "text-ctp-green";
   const timelinePct = getTimelinePositionPercent(nextSwitch, remainingMs);
-  const startPct = clampPercent((SWITCH_END_MINUTE / (24 * 60)) * 100);
-  const endPct = clampPercent((SWITCH_START_MINUTE / (24 * 60)) * 100);
+
+  // Determine if today is a weekend
+  const todayIsWeekend = nextSwitch && remainingMs !== null
+    ? isWeekend(nextSwitch.setZone("Asia/Manila"))
+    : false;
+
+  // On weekends, the entire day is "normal" (no peak-hour nerfing)
+  const startPct = todayIsWeekend ? 0 : clampPercent((SWITCH_END_MINUTE / (24 * 60)) * 100);
+  const endPct = todayIsWeekend ? 100 : clampPercent((SWITCH_START_MINUTE / (24 * 60)) * 100);
   const normalWidthPct = Math.max(0, endPct - startPct);
 
   return (
@@ -65,14 +72,23 @@ export function ModePanel({
           <table className="w-full border-collapse overflow-hidden rounded-lg text-left">
             <thead>
               <tr className="border-b border-ctp-surface1 text-xs tracking-wide text-ctp-subtext0 uppercase">
-                <th className="py-2 pr-3 font-semibold">Nerfed</th>
-                <th className="py-2 pl-3 font-semibold">Normal</th>
+                <th className="py-2 pr-3 font-semibold">{todayIsWeekend ? "Today" : "Nerfed"}</th>
+                <th className="py-2 pl-3 font-semibold">{todayIsWeekend ? "Usage" : "Normal"}</th>
               </tr>
             </thead>
             <tbody>
               <tr className="text-sm text-ctp-text">
-                <td className="py-2 pr-3">8 PM - 2 AM</td>
-                <td className="py-2 pl-3">2 AM - 8 PM + weekend</td>
+                {todayIsWeekend ? (
+                  <>
+                    <td className="py-2 pr-3">All day (Weekend)</td>
+                    <td className="py-2 pl-3">Standard pace</td>
+                  </>
+                ) : (
+                  <>
+                    <td className="py-2 pr-3">8 PM - 2 AM</td>
+                    <td className="py-2 pl-3">2 AM - 8 PM</td>
+                  </>
+                )}
               </tr>
             </tbody>
           </table>
@@ -98,20 +114,22 @@ export function ModePanel({
         </div>
       </div>
 
-      <div className="relative h-4 text-[0.72rem] text-ctp-subtext0 tabular-nums">
-        <span
-          className="absolute -translate-x-1/2"
-          style={{ left: `${startPct}%` }}
-        >
-          2 am
-        </span>
-        <span
-          className="absolute -translate-x-1/2"
-          style={{ left: `${endPct}%` }}
-        >
-          8 pm
-        </span>
-      </div>
+      {!todayIsWeekend && (
+        <div className="relative h-4 text-[0.72rem] text-ctp-subtext0 tabular-nums">
+          <span
+            className="absolute -translate-x-1/2"
+            style={{ left: `${startPct}%` }}
+          >
+            2 am
+          </span>
+          <span
+            className="absolute -translate-x-1/2"
+            style={{ left: `${endPct}%` }}
+          >
+            8 pm
+          </span>
+        </div>
+      )}
 
       <p className="text-base leading-none text-ctp-subtext0 tabular-nums">
         Switches in {countdown}
