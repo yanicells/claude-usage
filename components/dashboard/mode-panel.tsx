@@ -5,6 +5,56 @@ import { clampPercent } from "@/components/dashboard/progress-bar";
 
 const SWITCH_START_MINUTE = 20 * 60;
 const SWITCH_END_MINUTE = 2 * 60;
+const MINUTES_PER_DAY = 24 * 60;
+
+function isFasterStartDay(weekday: number): boolean {
+  return weekday >= 1 && weekday <= 5;
+}
+
+function getNowPh(
+  nextSwitch: DateTime | null,
+  remainingMs: number | null,
+): DateTime {
+  if (nextSwitch && remainingMs !== null) {
+    const nowMs = nextSwitch.toMillis() - remainingMs;
+    return DateTime.fromMillis(nowMs).setZone("Asia/Manila");
+  }
+
+  return DateTime.now().setZone("Asia/Manila");
+}
+
+function getDailyNormalWindow(nowPh: DateTime): {
+  startMinute: number;
+  endMinute: number;
+} {
+  const morningIsFaster = isFasterStartDay(nowPh.minus({ days: 1 }).weekday);
+  const eveningIsFaster = isFasterStartDay(nowPh.weekday);
+
+  return {
+    startMinute: morningIsFaster ? SWITCH_END_MINUTE : 0,
+    endMinute: eveningIsFaster ? SWITCH_START_MINUTE : MINUTES_PER_DAY,
+  };
+}
+
+function formatMinuteLabel(minute: number): string {
+  if (minute <= 0 || minute >= MINUTES_PER_DAY) {
+    return "12 am";
+  }
+
+  if (minute === SWITCH_END_MINUTE) {
+    return "2 am";
+  }
+
+  if (minute === SWITCH_START_MINUTE) {
+    return "8 pm";
+  }
+
+  const hours = Math.floor(minute / 60);
+  const mins = minute % 60;
+  const period = hours >= 12 ? "pm" : "am";
+  const hour12 = hours % 12 === 0 ? 12 : hours % 12;
+  return `${hour12}:${String(mins).padStart(2, "0")} ${period}`;
+}
 
 function getTimelinePositionPercent(
   nextSwitch: DateTime | null,
@@ -18,12 +68,7 @@ function getTimelinePositionPercent(
   const nowPh = DateTime.fromMillis(nowMs).setZone("Asia/Manila");
   const minutesToday = nowPh.hour * 60 + nowPh.minute + nowPh.second / 60;
 
-  return clampPercent((minutesToday / (24 * 60)) * 100);
-}
-
-function isWeekend(dateTime: DateTime): boolean {
-  // 6 = Saturday, 7 = Sunday in Luxon
-  return dateTime.weekday === 6 || dateTime.weekday === 7;
+  return clampPercent((minutesToday / MINUTES_PER_DAY) * 100);
 }
 
 export function ModePanel({
@@ -40,16 +85,13 @@ export function ModePanel({
   const isFaster = mode === "faster";
   const modeColor = isFaster ? "text-ctp-yellow" : "text-ctp-green";
   const timelinePct = getTimelinePositionPercent(nextSwitch, remainingMs);
+  const nowPh = getNowPh(nextSwitch, remainingMs);
+  const { startMinute, endMinute } = getDailyNormalWindow(nowPh);
 
-  // Determine if today is a weekend
-  const todayIsWeekend = nextSwitch && remainingMs !== null
-    ? isWeekend(nextSwitch.setZone("Asia/Manila"))
-    : false;
-
-  // On weekends, the entire day is "normal" (no peak-hour nerfing)
-  const startPct = todayIsWeekend ? 0 : clampPercent((SWITCH_END_MINUTE / (24 * 60)) * 100);
-  const endPct = todayIsWeekend ? 100 : clampPercent((SWITCH_START_MINUTE / (24 * 60)) * 100);
+  const startPct = clampPercent((startMinute / MINUTES_PER_DAY) * 100);
+  const endPct = clampPercent((endMinute / MINUTES_PER_DAY) * 100);
   const normalWidthPct = Math.max(0, endPct - startPct);
+  const showBoundaryTicks = startMinute > 0 || endMinute < MINUTES_PER_DAY;
 
   return (
     <div className="relative flex flex-col gap-3 rounded-2xl border border-ctp-surface1 bg-ctp-surface0 p-7">
@@ -72,23 +114,14 @@ export function ModePanel({
           <table className="w-full border-collapse overflow-hidden rounded-lg text-left">
             <thead>
               <tr className="border-b border-ctp-surface1 text-xs tracking-wide text-ctp-subtext0 uppercase">
-                <th className="py-2 pr-3 font-semibold">{todayIsWeekend ? "Today" : "Nerfed"}</th>
-                <th className="py-2 pl-3 font-semibold">{todayIsWeekend ? "Usage" : "Normal"}</th>
+                <th className="py-2 pr-3 font-semibold">Nerfed</th>
+                <th className="py-2 pl-3 font-semibold">Normal</th>
               </tr>
             </thead>
             <tbody>
               <tr className="text-sm text-ctp-text">
-                {todayIsWeekend ? (
-                  <>
-                    <td className="py-2 pr-3">All day (Weekend)</td>
-                    <td className="py-2 pl-3">Standard pace</td>
-                  </>
-                ) : (
-                  <>
-                    <td className="py-2 pr-3">8 PM - 2 AM</td>
-                    <td className="py-2 pl-3">2 AM - 8 PM</td>
-                  </>
-                )}
+                <td className="py-2 pr-3">Mon-Fri, 8 PM-2 AM</td>
+                <td className="py-2 pl-3">Sat 2 AM-Mon 8 PM + weekdays 2 AM-8 PM</td>
               </tr>
             </tbody>
           </table>
@@ -114,19 +147,19 @@ export function ModePanel({
         </div>
       </div>
 
-      {!todayIsWeekend && (
+      {showBoundaryTicks && (
         <div className="relative h-4 text-[0.72rem] text-ctp-subtext0 tabular-nums">
           <span
             className="absolute -translate-x-1/2"
             style={{ left: `${startPct}%` }}
           >
-            2 am
+            {formatMinuteLabel(startMinute)}
           </span>
           <span
             className="absolute -translate-x-1/2"
             style={{ left: `${endPct}%` }}
           >
-            8 pm
+            {formatMinuteLabel(endMinute)}
           </span>
         </div>
       )}
