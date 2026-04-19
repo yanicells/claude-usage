@@ -11,6 +11,10 @@ function isFasterStartDay(weekday: number): boolean {
   return weekday >= 1 && weekday <= 5;
 }
 
+function isWeekendDay(weekday: number): boolean {
+  return weekday === 6 || weekday === 7;
+}
+
 function getNowPh(
   nextSwitch: DateTime | null,
   remainingMs: number | null,
@@ -87,11 +91,15 @@ export function ModePanel({
   const timelinePct = getTimelinePositionPercent(nextSwitch, remainingMs);
   const nowPh = getNowPh(nextSwitch, remainingMs);
   const { startMinute, endMinute } = getDailyNormalWindow(nowPh);
+  const todayIsWeekend = isWeekendDay(nowPh.weekday);
 
   const startPct = clampPercent((startMinute / MINUTES_PER_DAY) * 100);
   const endPct = clampPercent((endMinute / MINUTES_PER_DAY) * 100);
   const normalWidthPct = Math.max(0, endPct - startPct);
-  const showBoundaryTicks = startMinute > 0 || endMinute < MINUTES_PER_DAY;
+  const showBoundaryTicks =
+    todayIsWeekend || startMinute > 0 || endMinute < MINUTES_PER_DAY;
+  const leftTickLabel = todayIsWeekend ? "Sat" : formatMinuteLabel(startMinute);
+  const rightTickLabel = todayIsWeekend ? "Sun" : formatMinuteLabel(endMinute);
 
   return (
     <div className="relative flex flex-col gap-3 rounded-2xl border border-ctp-surface1 bg-ctp-surface0 p-7">
@@ -121,7 +129,9 @@ export function ModePanel({
             <tbody>
               <tr className="text-sm text-ctp-text">
                 <td className="py-2 pr-3">Mon-Fri, 8 PM-2 AM</td>
-                <td className="py-2 pl-3">Sat 2 AM-Mon 8 PM + weekdays 2 AM-8 PM</td>
+                <td className="py-2 pl-3">
+                  Sat 2 AM-Mon 8 PM + weekdays 2 AM-8 PM
+                </td>
               </tr>
             </tbody>
           </table>
@@ -149,18 +159,27 @@ export function ModePanel({
 
       {showBoundaryTicks && (
         <div className="relative h-4 text-[0.72rem] text-ctp-subtext0 tabular-nums">
-          <span
-            className="absolute -translate-x-1/2"
-            style={{ left: `${startPct}%` }}
-          >
-            {formatMinuteLabel(startMinute)}
-          </span>
-          <span
-            className="absolute -translate-x-1/2"
-            style={{ left: `${endPct}%` }}
-          >
-            {formatMinuteLabel(endMinute)}
-          </span>
+          {todayIsWeekend ? (
+            <>
+              <span className="absolute left-0">{leftTickLabel}</span>
+              <span className="absolute right-0">{rightTickLabel}</span>
+            </>
+          ) : (
+            <>
+              <span
+                className="absolute -translate-x-1/2"
+                style={{ left: `${startPct}%` }}
+              >
+                {leftTickLabel}
+              </span>
+              <span
+                className="absolute -translate-x-1/2"
+                style={{ left: `${endPct}%` }}
+              >
+                {rightTickLabel}
+              </span>
+            </>
+          )}
         </div>
       )}
 
