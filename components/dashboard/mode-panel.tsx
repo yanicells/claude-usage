@@ -7,10 +7,6 @@ const SWITCH_START_MINUTE = 20 * 60;
 const SWITCH_END_MINUTE = 2 * 60;
 const MINUTES_PER_DAY = 24 * 60;
 
-function isFasterStartDay(weekday: number): boolean {
-  return weekday >= 1 && weekday <= 5;
-}
-
 function isWeekendDay(weekday: number): boolean {
   return weekday === 6 || weekday === 7;
 }
@@ -31,13 +27,10 @@ function getDailyNormalWindow(nowPh: DateTime): {
   startMinute: number;
   endMinute: number;
 } {
-  const morningIsFaster = isFasterStartDay(nowPh.minus({ days: 1 }).weekday);
-  const eveningIsFaster = isFasterStartDay(nowPh.weekday);
-
-  return {
-    startMinute: morningIsFaster ? SWITCH_END_MINUTE : 0,
-    endMinute: eveningIsFaster ? SWITCH_START_MINUTE : MINUTES_PER_DAY,
-  };
+  if (isWeekendDay(nowPh.weekday)) {
+    return { startMinute: 0, endMinute: MINUTES_PER_DAY };
+  }
+  return { startMinute: SWITCH_END_MINUTE, endMinute: SWITCH_START_MINUTE };
 }
 
 function formatMinuteLabel(minute: number): string {
