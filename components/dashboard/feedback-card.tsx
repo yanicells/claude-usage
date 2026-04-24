@@ -16,6 +16,10 @@ export function FeedbackCard({
   let actualColor = "text-ctp-text";
   let expectedColor = "text-ctp-subtext0";
 
+  const total = 100 / 14;
+  const currentProgress = actual !== null ? actual / 14 : 0;
+  const sessionsLeft = (total - currentProgress).toPrecision(2);
+
   if (delta !== null) {
     const abs = Math.abs(delta);
     const sessions = Math.round((abs / 14) * 2) / 2;
@@ -23,23 +27,23 @@ export function FeedbackCard({
     deltaText = `${delta > 0 ? "+" : ""}${delta}%`;
 
     if (delta < 0) {
-      statusWord = "Behind";
+      statusWord = "behind";
       statusColor = "text-ctp-green";
       actualColor = "text-ctp-green";
       expectedColor = "text-ctp-blue";
       sessionValueText = `${sessions}`;
       sessionValueColor = "text-ctp-green";
-      roomSuffix = sessions === 1 ? "session left" : "sessions left";
+      roomSuffix = sessions === 1 ? "left" : "left";
     } else if (delta > 0) {
-      statusWord = "Ahead";
+      statusWord = "ahead";
       statusColor = "text-ctp-red";
       actualColor = "text-ctp-red";
       expectedColor = "text-ctp-blue";
       sessionValueText = `${sessions}`;
       sessionValueColor = "text-ctp-red";
-      roomSuffix = sessions === 1 ? "session over" : "sessions over";
+      roomSuffix = sessions === 1 ? "ahead" : "ahead";
     } else {
-      statusWord = "Even";
+      statusWord = "even";
       statusColor = "text-ctp-blue";
       actualColor = "text-ctp-blue";
       expectedColor = "text-ctp-blue";
@@ -51,13 +55,13 @@ export function FeedbackCard({
 
   return (
     <div className="shrink-0 rounded-2xl border border-ctp-surface1 bg-ctp-surface0 px-3 py-2 sm:px-5 sm:py-3">
-      <div className="grid md:grid-cols-3 md:divide-x md:divide-ctp-surface1/80">
+      <div className="grid md:grid-cols-4 md:divide-x md:divide-ctp-surface1/80">
         <div className="px-3 py-2">
           <p className="mb-1 text-[0.68rem] tracking-[0.14em] text-ctp-overlay0 uppercase">
             Pace status
           </p>
           <p className={`text-2xl leading-tight font-bold ${statusColor}`}>
-            {statusWord} {delta !== null ? `by ${deltaText}` : ""}
+            {delta !== null ? `${deltaText} ${statusWord}  ` : ""}
           </p>
         </div>
 
@@ -83,6 +87,19 @@ export function FeedbackCard({
           <p className="text-2xl leading-tight font-semibold text-ctp-subtext0">
             <span className={sessionValueColor}>{sessionValueText}</span>
             {roomSuffix ? <span className="ml-1">{roomSuffix}</span> : null}
+          </p>
+        </div>
+
+        <div className="border-t border-ctp-surface1/80 px-3 py-2 md:border-t-0">
+          <p className="mb-1 text-[0.68rem] tracking-[0.14em] text-ctp-overlay0 uppercase">
+            Weekly progress
+          </p>
+          <p className="text-2xl leading-tight font-semibold text-ctp-subtext0">
+            <span className="text-ctp-blue">{currentProgress.toPrecision(2)}</span>
+            <span className="px-1 text-ctp-overlay0">/</span>
+            <span className="text-ctp-red">{total.toPrecision(2)}</span>
+            <span className="px-1 text-ctp-overlay0">/</span>
+            <span className="text-ctp-text">{sessionsLeft}</span>
           </p>
         </div>
       </div>
