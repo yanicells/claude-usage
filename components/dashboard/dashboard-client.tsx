@@ -8,6 +8,7 @@ import { FeedbackCard } from "@/components/dashboard/feedback-card";
 import { ModePanel } from "@/components/dashboard/mode-panel";
 import { PacingChart } from "@/components/dashboard/pacing-chart";
 import { SessionCard } from "@/components/dashboard/session-card";
+import { TimerTracker } from "@/components/dashboard/timer-tracker";
 import { WeeklyCard } from "@/components/dashboard/weekly-card";
 import {
   LOCAL_STORAGE_KEY,
@@ -185,6 +186,9 @@ export function DashboardClient() {
                 nextSwitch={nextSwitch}
                 remainingMs={remainingMs}
               />
+            </div>
+            <div className="col-span-2">
+              <TimerTracker />
             </div>
           </div>
 
