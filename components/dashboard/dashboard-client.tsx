@@ -179,14 +179,14 @@ export function DashboardClient() {
               resetText={companionState?.weeklyResetText ?? null}
               status={comparison?.status ?? null}
             />
-            <div className="col-span-2">
+            {/* <div className="col-span-2">
               <ModePanel
                 mode={fasterStatus.mode}
                 countdown={countdown}
                 nextSwitch={nextSwitch}
                 remainingMs={remainingMs}
               />
-            </div>
+            </div> */}
             <div className="col-span-2">
               <TimerTracker />
             </div>
