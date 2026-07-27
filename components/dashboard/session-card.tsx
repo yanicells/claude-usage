@@ -1,28 +1,5 @@
 import { ProgressBar } from "@/components/dashboard/progress-bar";
-
-function parseResetTime(
-  resetText: string,
-): { relative: string; absolute: string } | null {
-  const match = resetText.match(
-    /Resets in (\d+)\s*hr(?:s)?\s*(?:(\d+)\s*min)?/i,
-  );
-  if (!match) return null;
-
-  const hours = parseInt(match[1], 10);
-  const mins = match[2] ? parseInt(match[2], 10) : 0;
-  const totalMs = (hours * 60 + mins) * 60 * 1000;
-  const resetDateTime = new Date(Date.now() + totalMs);
-
-  const formatter = new Intl.DateTimeFormat("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
-  const absolute = formatter.format(resetDateTime);
-  const relative = `${hours} h ${mins} min`;
-
-  return { relative, absolute };
-}
+import { parseResetTime } from "@/lib/reset-time";
 
 export function SessionCard({
   used,
@@ -45,7 +22,7 @@ export function SessionCard({
       {resetTimeInfo ? (
         <div className="flex items-center justify-between gap-2 text-base leading-tight text-ctp-subtext0">
           <p>Resets in {resetTimeInfo.relative}</p>
-          <p>{resetTimeInfo.absolute}</p>
+          <p className="text-right tabular-nums">{resetTimeInfo.absolute}</p>
         </div>
       ) : (
         <p className="text-base leading-tight text-ctp-subtext0 sm:truncate sm:leading-none">
